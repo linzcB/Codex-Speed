@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.1.3 — 2026-10-16
+
+- Apply the auto review switch to both live speed rows, active agent counts, current-round and session totals, daily history, and CSV exports.
+- Filter mixed-model turns per request, including their output samples; retain original agent details with exclusion labels.
+- Keep model usage beyond the live view's recent-turn limit and read missing prefixes in bounded background batches when needed.
+
+## 1.1.2 — 2026-10-16
+
+- Add a persistent daily-history switch to include or exclude Codex auto review, off by default.
+- Apply exclusions per recorded model to input, output, reasoning, cache statistics, weighted speed, and cost coverage; show excluded usage separately.
+- Keep review-only dates selectable and allow restoring excluded data without modifying logs.
+- Preserve live speed and session totals independently of the daily-history filter.
+
+## 1.1.1 — 2026-10-16
+
+- Wake from relevant file-system changes and reduce hidden, idle polling from one second to 30 seconds, with polling fallback.
+- Pause automatic daily-history scans while the panel is hidden and release closed dashboard views.
+- Cache localization bundles, unchanged database titles, and per-refresh statistics; avoid repainting unchanged menu bar text.
+- Skip timestamp parsing for metadata-only discovery, create date parsers on demand, and group agent files once per scan.
+- Preserve forced refreshes received during an in-flight scan and refresh after system wake.
+- Add a generated-data benchmark and regression checks for title-cache invalidation and notification filtering.
+
 ## 1.1.0 — 2026-10-16
 
 - English and Simplified Chinese interfaces, selected automatically from macOS preferences.

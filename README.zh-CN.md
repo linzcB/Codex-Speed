@@ -52,6 +52,7 @@
 - **选择会话：** 在“当前会话”中选择；“最近活动（自动）”跟随日志活动，不能识别 Codex 窗口当前选中的聊天。
 - **固定侧栏：** 点击图钉，将详情固定为悬浮窗口。
 - **统计子 agent：** “计入子 agent”同时控制两行速度、token 合计和每日历史。
+- **排除自动审核：** “计入 Codex auto review”默认关闭，两行实时速度、活动数、会话合计、每日历史和 CSV 导出都会排除它。实时与历史页面共用同一开关；明细保留原始记录，可随时重新计入。
 - **切换语言：** 点击 **… → 语言 → 跟随系统 / 简体中文 / English**，立即生效并记住选择。
 - **选择日志或导出：** 均在“…”菜单中。默认读取 `~/.codex/sessions`，或 `CODEX_HOME` 下的 `sessions`。
 
@@ -78,7 +79,7 @@ cd Codex-Speed
 open "dist/Codex Speed.app"
 ```
 
-运行 `swift test` 执行测试。运行 `./scripts/package-release.sh` 可生成安装包及校验文件。
+运行 `swift test` 执行测试；运行 `./scripts/benchmark.sh` 可用模拟数据做性能测试，详见[性能说明](docs/PERFORMANCE.md)。运行 `./scripts/package-release.sh` 可生成安装包及校验文件。
 
 ## 参与贡献
 

@@ -44,6 +44,10 @@ public struct Turn: Identifiable, Sendable {
     public var legacyBaseline = Usage()
     public var legacyTotal = Usage()
     public var hasLegacyTotal = false
+    public var autoReviewUsage = Usage()
+    public var autoReviewCalls = 0
+    public var autoReviewResponseIDs = Set<String>()
+    public var reviewFilteredModel: String?
 
     public init(id: String, start: Date) { self.id = id; self.start = start }
     public func duration(at date: Date) -> TimeInterval {
@@ -79,7 +83,20 @@ public final class SessionLog {
     private var hasMetadata = false
     private var readingInheritedHistory = false
     var metadataLoaded: Bool { hasMetadata }
-    public var lifetimeUsage: Usage { hasCumulativeUsage ? threadTotal : turns.reduce(into: Usage()) { $0.add($1.usage) } }
+    public var lifetimeUsage: Usage {
+        if hasCumulativeUsage { return threadTotal }
+        if let modelUsage, modelUsage.requestCount > 0 { return modelUsage.totalUsage }
+        return turns.reduce(into: Usage()) { $0.add($1.usage) }
+    }
+    public var autoReviewUsage: Usage { modelUsage?.autoReviewUsage ?? Usage() }
+    public var hasModelUsageBreakdown: Bool {
+        !hasSkippedHistory && !hasUnreadBytes && !hasPendingLine && skippedLargeLines == 0 && (modelUsage?.unknownModels ?? 0) == 0
+            && (!hasCumulativeUsage || modelUsage?.totalUsage == threadTotal)
+    }
+    public var turnsWithUsageBreakdown: [Turn] {
+        guard let modelUsage, modelUsage.reviewCalls > 0 else { return turns }
+        return turns.map(modelUsage.annotate)
+    }
     public var turns: [Turn] = []
     public var modifiedAt = Date.distantPast
     public private(set) var error: String?
@@ -96,9 +113,26 @@ public final class SessionLog {
     private var discardingLine = false
     private var currentID: String?
     private var threadTotal = Usage()
+    private var modelUsage: ModelUsageLedger?
+    private var needsFullModelHistory = false
+    private var ledger: ModelUsageLedger? {
+        guard !fullHistory else { return nil }
+        if modelUsage == nil { modelUsage = ModelUsageLedger() }
+        return modelUsage
+    }
     private var tierChanges: [(date: Date, tier: ApiServiceTier)] = []
-    private let formatter = ISO8601DateFormatter()
-    private let simpleFormatter = ISO8601DateFormatter()
+    // Discovery only needs metadata. Most archived/idle files never need their
+    // own date parsers until their contents are actually read.
+    private lazy var formatter: ISO8601DateFormatter = {
+        let value = ISO8601DateFormatter()
+        value.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return value
+    }()
+    private lazy var simpleFormatter: ISO8601DateFormatter = {
+        let value = ISO8601DateFormatter()
+        value.formatOptions = [.withInternetDateTime]
+        return value
+    }()
     private static let lineLimit = 16 * 1024 * 1024
     private static let initialTail = 8 * 1024 * 1024
 
@@ -108,8 +142,6 @@ public final class SessionLog {
         dailyStatistics = fullHistory ? DailyLogStatistics(timeZone: statisticsTimeZone) : nil
         id = url.deletingPathExtension().lastPathComponent
         label = "未命名会话"
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        simpleFormatter.formatOptions = [.withInternetDateTime]
     }
     public var latest: Turn? { turns.last }
     public var lastActivity: Date { latest?.lastUsageAt ?? latest?.start ?? modifiedAt }
@@ -128,12 +160,17 @@ public final class SessionLog {
         consume(line)
     }
 
-    /// Incremental reads; on first use only metadata plus the last 8 MiB are read.
+    /// Incremental reads default to metadata plus the last 8 MiB. Per-model
+    /// lifetime accounting opts into reading the prefix in bounded batches.
     /// Partial lines are retained until their newline arrives. Oversized unrelated
     /// records are skipped with a bounded buffer, so tool output cannot exhaust RAM.
-    public func refresh(maxBytes: Int = 2 * 1024 * 1024) {
+    public func refresh(maxBytes: Int = 2 * 1024 * 1024, requiresModelUsage: Bool = false) {
         lastReadByteCount = 0
         do {
+            if requiresModelUsage {
+                needsFullModelHistory = true
+                if hasSkippedHistory { reset() }
+            }
             if offset == 0, !hasMetadata, !fullHistory { refreshMetadata() }
             let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
             let size = (attrs[.size] as? NSNumber)?.uint64Value ?? 0
@@ -143,10 +180,11 @@ public final class SessionLog {
                 ((fileNumber != nil && number != fileNumber) || (size == offset && modification != modifiedAt))) { reset() }
             modifiedAt = modification; fileNumber = number; hasReadFile = true
             guard size > offset else { error = nil; hasUnreadBytes = false; return }
+            guard maxBytes > 0 else { hasUnreadBytes = true; return }
             let handle = try FileHandle(forReadingFrom: url)
             defer { try? handle.close() }
             var budget = maxBytes
-            if offset == 0, size > UInt64(Self.initialTail), !isAttributedSubagent, !fullHistory {
+            if offset == 0, size > UInt64(Self.initialTail), !isAttributedSubagent, !fullHistory, !needsFullModelHistory {
                 hasSkippedHistory = true
                 let head = try handle.read(upToCount: 64 * 1024) ?? Data()
                 if let newline = head.firstIndex(of: 10) { consume(Data(head[..<newline])) }
@@ -170,6 +208,7 @@ public final class SessionLog {
     private func reset() {
         offset = 0; pending.removeAll(); turns.removeAll()
         currentID = nil; threadTotal = Usage(); discardingLine = false
+        modelUsage = nil
         skippedLargeLines = 0
         id = url.deletingPathExtension().lastPathComponent
         label = "未命名会话"; labelIsFallback = true; cwd = ""; isSubagent = false
@@ -260,7 +299,6 @@ public final class SessionLog {
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let kind = root["type"] as? String,
               let payload = root["payload"] as? [String: Any] else { return }
-        let timestamp = date(root["timestamp"]) ?? .distantPast
         let turnID = payload["turn_id"] as? String
         if kind == "session_meta" {
             if hasMetadata, let recordID = payload["id"] as? String, recordID != id {
@@ -291,6 +329,7 @@ public final class SessionLog {
             }
             return
         }
+        let timestamp = date(root["timestamp"]) ?? .distantPast
         // Forked logs can contain copied parent records. Only charge usage to
         // the thread that actually made the request.
         if let owner = payload["thread_id"] as? String, hasMetadata, owner != id { return }
@@ -305,6 +344,7 @@ public final class SessionLog {
             model = payload["model"] as? String ?? model
             if let target = turnID ?? currentID, let value = payload["model"] as? String {
                 dailyStatistics?.setModel(value, for: target)
+                ledger?.setModel(value, for: target)
             }
             if let target = turnID ?? currentID, let i = turns.lastIndex(where: { $0.id == target }) {
                 turns[i].model = model
@@ -336,11 +376,13 @@ public final class SessionLog {
             return
         }
         if kind == "token_usage_record", let json = payload["usage"] as? [String: Any] {
-            let i = ensureTurn(turnID, at: timestamp)
-            turns[i].rootTurnID = payload["root_turn_id"] as? String ?? turns[i].rootTurnID
             let responseID = payload["response_id"] as? String
                 ?? "\(timestamp.timeIntervalSince1970)-\(Usage(json).output)"
+            guard ledger?.contains(responseID: responseID) != true else { return }
+            let i = ensureTurn(turnID, at: timestamp)
+            turns[i].rootTurnID = payload["root_turn_id"] as? String ?? turns[i].rootTurnID
             guard turns[i].seenResponses.insert(responseID).inserted else { return }
+            ledger?.recordModern(responseID: responseID, turnID: turns[i].id, usage: Usage(json))
             if !turns[i].modernUsage {
                 // Replace legacy event totals when both formats coexist.
                 turns[i].usage = Usage(); turns[i].calls = 0; turns[i].modernUsage = true
@@ -414,6 +456,7 @@ public final class SessionLog {
                 if itemType == "AgentMessage" || itemType == "agentMessage",
                    started >= turns[i].start {
                     turns[i].firstVisibleOutputAt = min(turns[i].firstVisibleOutputAt ?? started, started)
+                    turns[i].pendingOutput.firstVisibleOutputAt = min(turns[i].pendingOutput.firstVisibleOutputAt ?? started, started)
                 }
             } else if event == "item_completed" || turns[i].toolIntervals[key] == nil {
                 turns[i].toolIntervals[key] = ToolInterval(start: started, end: completed)
@@ -453,6 +496,7 @@ public final class SessionLog {
             guard !turns[i].modernUsage else { return }
             guard !turns[i].hasLegacyTotal || total != turns[i].legacyTotal else { return }
             let baseline = turns[i].legacyBaseline
+            let previousUsage = turns[i].usage
             // A reset (e.g. compaction) must not turn a delta negative or copy
             // previous-turn totals into the current turn.
             if total.output >= baseline.output, total.input >= baseline.input {
@@ -469,6 +513,7 @@ public final class SessionLog {
             turns[i].pendingOutput = PendingOutput()
             turns[i].hasUsage = true; turns[i].lastUsageAt = timestamp
             turns[i].calls += 1
+            ledger?.recordLegacy(turnID: turns[i].id, usage: turns[i].usage.subtracting(previousUsage))
         default: break
         }
     }
@@ -499,8 +544,8 @@ public struct SessionSnapshot: Identifiable, Sendable {
     public init(log: SessionLog) {
         id = log.id; label = log.label; model = log.model; url = log.url
         labelIsFallback = log.labelIsFallback
-        turns = log.turns; modifiedAt = log.modifiedAt; error = log.error
         own = AgentSnapshot(log: log)
+        turns = own.turns; modifiedAt = log.modifiedAt; error = log.error
     }
 }
 
@@ -517,6 +562,8 @@ public final class LogScanner: @unchecked Sendable {
     private var logs: [URL: SessionLog] = [:]
     private var lastDiscovery = Date.distantPast
     private var candidates: [URL] = []
+    private var candidatePaths = Set<String>()
+    private var readCursor = 0
     private var rootCandidates: [URL] = []
     private var owners: [URL: String] = [:]
     private let titles: SessionTitles
@@ -526,7 +573,9 @@ public final class LogScanner: @unchecked Sendable {
         titles = SessionTitles(directory: directory.deletingLastPathComponent())
     }
 
-    public func scan(at now: Date = Date(), force: Bool = false, preferredID: String? = nil) -> ScanResult {
+    public func scan(at now: Date = Date(), force: Bool = false, preferredID: String? = nil,
+                     discoveryInterval: TimeInterval = 10, changedLogPaths: Set<String> = [],
+                     includeAutoReview: Bool = true) -> ScanResult {
         lock.lock()
         defer { lock.unlock() }
         let fm = FileManager.default
@@ -534,7 +583,8 @@ public final class LogScanner: @unchecked Sendable {
         guard fm.fileExists(atPath: directory.path, isDirectory: &isDir), isDir.boolValue else {
             return ScanResult(sessions: [], message: L10n.text("找不到 sessions 文件夹，请选择 Codex 日志位置。"))
         }
-        if force || now.timeIntervalSince(lastDiscovery) >= 10 {
+        let resumedOlderChat = !changedLogPaths.isSubset(of: candidatePaths)
+        if force || resumedOlderChat || now.timeIntervalSince(lastDiscovery) >= discoveryInterval {
             let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
             var discoveryFailed = false
             var files: [(URL, Date, Bool)] = []
@@ -599,19 +649,33 @@ public final class LogScanner: @unchecked Sendable {
             }
             let rootIDs = Set(rootCandidates.compactMap { logs[$0]?.id })
             candidates = rootCandidates + owners.keys.filter { rootIDs.contains(owners[$0]!) }
+            candidatePaths = Set(candidates.map { $0.resolvingSymlinksInPath().path })
             lastDiscovery = now
             discoveryMessage = discoveryFailed ? L10n.text("部分日志无法读取，合计可能不完整。") : nil
         }
-        for url in candidates { logs[url]?.refresh() }
+        // Model-filtered lifetime totals need the prefix as well as the tail.
+        // Share a byte budget and rotate it across files while catching up.
+        var remaining = 8 * 1024 * 1024
+        let startIndex = candidates.isEmpty ? 0 : readCursor % candidates.count
+        for offset in candidates.indices {
+            let index = (startIndex + offset) % candidates.count
+            guard let log = logs[candidates[index]] else { continue }
+            let budget = includeAutoReview ? 2 * 1024 * 1024 : min(remaining, 2 * 1024 * 1024)
+            log.refresh(maxBytes: budget, requiresModelUsage: !includeAutoReview)
+            if !includeAutoReview, log.lastReadByteCount > 0 {
+                remaining -= log.lastReadByteCount; readCursor = (index + 1) % candidates.count
+            }
+        }
         let names = titles.names(for: rootCandidates.compactMap { logs[$0]?.id })
+        let children = Dictionary(grouping: candidates.filter { owners[$0] != nil }, by: { owners[$0]! })
         var snapshots: [SessionSnapshot] = []
         for url in rootCandidates {
             guard let log = logs[url] else { continue }
             log.label = names[log.id] ?? "未命名会话"
             log.labelIsFallback = names[log.id] == nil
             var snapshot = SessionSnapshot(log: log)
-            snapshot.agents = candidates.compactMap { childURL -> AgentSnapshot? in
-                guard owners[childURL] == log.id, let child = logs[childURL] else { return nil }
+            snapshot.agents = (children[log.id] ?? []).compactMap { childURL -> AgentSnapshot? in
+                guard let child = logs[childURL] else { return nil }
                 return AgentSnapshot(log: child)
             }.sorted { $0.modifiedAt > $1.modifiedAt }
             snapshot.modifiedAt = max(snapshot.modifiedAt, snapshot.agents.map(\.modifiedAt).max() ?? .distantPast)

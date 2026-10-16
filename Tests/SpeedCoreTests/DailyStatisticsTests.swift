@@ -73,6 +73,77 @@ final class DailyStatisticsTests: XCTestCase {
         return result
     }
 
+    func testAutoReviewFilterUsesEachRequestModelAndRestoresWithoutChangingLogs() throws {
+        let tier = line("event_msg", ["type": "thread_settings_applied", "thread_id": "main",
+            "thread_settings": ["service_tier": "default"]])
+        func priced(_ response: String, input: Int, output: Int, cache: Int, at: Double) -> Data {
+            line("token_usage_record", ["thread_id": "main", "turn_id": "one", "response_id": response,
+                "usage": ["input_tokens": input, "output_tokens": output, "cached_input_tokens": cache,
+                          "cache_write_input_tokens": 0, "reasoning_output_tokens": output / 2]], at: at)
+        }
+        var data = metadata("main") + tier + start("one") + context("one", model: "gpt-6.1-sol")
+        data += output("one", from: 1, to: 11) + priced("paid", input: 100, output: 100, cache: 20, at: 12)
+        data += context("one", model: "codex-auto-review", at: 13)
+        data += output("one", from: 14, to: 24) + priced("review", input: 900, output: 500, cache: 800, at: 25)
+        let url = try write("main", data)
+        let scanner = DailyStatisticsScanner(directory: directory, timeZone: zone)
+        let all = try XCTUnwrap(try finish(scanner).days.first)
+        XCTAssertEqual(all.totals.inputTokens, 1000); XCTAssertEqual(all.totals.outputTokens, 600)
+        let filtered = try XCTUnwrap(scanner.scan(includeAutoReview: false).days.first)
+        XCTAssertEqual(filtered.totals.inputTokens, 100); XCTAssertEqual(filtered.totals.outputTokens, 100)
+        XCTAssertEqual(filtered.totals.cachedInputTokens, 20); XCTAssertEqual(filtered.totals.cacheHitRate, 0.2)
+        XCTAssertEqual(filtered.totals.averageSpeed, 10)
+        XCTAssertEqual(filtered.totals.requests, 1); XCTAssertEqual(filtered.totals.apiCost.pricedRequests, 1)
+        XCTAssertEqual(filtered.models.map(\.model), ["gpt-6.1-sol"])
+        XCTAssertEqual(filtered.excludedAutoReview.inputTokens, 900)
+        XCTAssertEqual(filtered.excludedAutoReview.outputTokens, 500)
+        XCTAssertEqual(filtered.excludedAutoReview.requests, 1)
+        XCTAssertEqual(filtered.totals.apiCost, all.totals.apiCost)
+        XCTAssertEqual(scanner.scan(includeAutoReview: true).days.first?.totals, all.totals)
+        XCTAssertEqual(try Data(contentsOf: url), data)
+    }
+
+    func testReviewOnlyDayRemainsSelectableAndLateModelIsReclassified() throws {
+        let url = try write("main", metadata("main") + start("one")
+            + usage("main", turn: "one", response: "r", input: 200, output: 20))
+        let scanner = DailyStatisticsScanner(directory: directory, timeZone: zone)
+        XCTAssertEqual(try finish(scanner).days.first?.totals.requests, 1)
+        try append(context("one", model: "codex-auto-review", at: 11), to: url)
+        let day = try XCTUnwrap(scanner.scan(includeAutoReview: false).days.first)
+        XCTAssertEqual(day.totals, DailyTotals())
+        XCTAssertTrue(day.models.isEmpty)
+        XCTAssertEqual(day.excludedAutoReview.requests, 1)
+        XCTAssertEqual(day.excludedAutoReview.outputTokens, 20)
+        XCTAssertEqual(scanner.scan(includeAutoReview: true).days.first?.models.first?.model, "codex-auto-review")
+    }
+
+    func testAutoReviewAndSubagentSwitchesAreIndependent() throws {
+        try write("main", metadata("main") + start("one") + context("one", model: "gpt-6.1-sol")
+            + usage("main", turn: "one", response: "main-r", input: 100, output: 10))
+        try write("child", metadata("child", parent: "main") + start("child-turn")
+            + context("child-turn", model: "codex-auto-review")
+            + usage("child", turn: "child-turn", response: "child-r", input: 200, output: 20))
+        try write("independent", metadata("independent") + start("other")
+            + context("other", model: "codex-auto-review")
+            + usage("independent", turn: "other", response: "other-r", input: 300, output: 30))
+        let scanner = DailyStatisticsScanner(directory: directory, timeZone: zone)
+        _ = try finish(scanner)
+        XCTAssertEqual(scanner.scan(includeAutoReview: false).days.first?.totals.inputTokens, 100)
+        XCTAssertEqual(scanner.scan(includeAutoReview: false).days.first?.excludedAutoReview.inputTokens, 500)
+        XCTAssertEqual(scanner.scan(includeSubagents: false, includeAutoReview: false).days.first?.excludedAutoReview.inputTokens, 300)
+        XCTAssertEqual(scanner.scan(includeSubagents: false, includeAutoReview: true).days.first?.totals.inputTokens, 400)
+        XCTAssertEqual(scanner.scan(includeSubagents: true, includeAutoReview: true).days.first?.totals.inputTokens, 600)
+    }
+
+    func testAutoReviewRecognitionMatchesModelIDsOnly() {
+        XCTAssertTrue(UsageFilter.isAutoReview(model: "codex-auto-review"))
+        XCTAssertTrue(UsageFilter.isAutoReview(model: "CODEX-AUTO-REVIEW-2026-10-16"))
+        XCTAssertFalse(UsageFilter.isAutoReview(model: "gpt-6.1-sol"))
+        XCTAssertFalse(UsageFilter.isAutoReview(model: "my-codex-auto-review"))
+        XCTAssertFalse(UsageFilter.isAutoReview(model: "codex-auto-reviewer"))
+        XCTAssertFalse(UsageFilter.isAutoReview(model: "guardian"))
+    }
+
     func testRequestDatesCrossShanghaiMidnightWithinOneTurnAndModelsStaySeparate() throws {
         var data = metadata("main") + start("one") + context("one", model: "model-a")
         data += output("one", from: 1, to: 11)

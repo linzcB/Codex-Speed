@@ -56,6 +56,23 @@ final class SessionFamilyTests: XCTestCase {
         LogScanner(directory: directory).scan(at: base.addingTimeInterval(seconds), force: true).sessions
     }
 
+    func testFileChangeRevivesOlderChatAndItsChildBeforePeriodicDiscovery() throws {
+        for i in 0..<10 { try write("main\(i)", metadata("main\(i)"), age: Double(-1000 - i)) }
+        try write("old-child", metadata("old-child", parent: "main9"), age: -2000)
+        let scanner = LogScanner(directory: directory)
+        XCTAssertFalse(scanner.scan(at: base, force: true).sessions.contains { $0.id == "main9" })
+        // A known old child can resume without creating a new file. Its event
+        // must bring the owning family back even with a longer fallback scan.
+        try write("old-child", metadata("old-child", parent: "main9") + start("resumed", root: "root", at: 1)
+            + usage("old-child", turn: "resumed", root: "root", output: 100, at: 2), age: 2)
+        let path = directory.appendingPathComponent("old-child.jsonl").resolvingSymlinksInPath().path
+        let result = scanner.scan(at: base.addingTimeInterval(3), discoveryInterval: 60, changedLogPaths: [path])
+        let family = try XCTUnwrap(result.sessions.first { $0.id == "main9" })
+        XCTAssertEqual(family.agents.first?.totalUsage.output, 100)
+        XCTAssertTrue(family.isActive(at: base.addingTimeInterval(3)))
+        XCTAssertEqual(GlobalSpeed(sessions: result.sessions, at: base.addingTimeInterval(3), metric: .wholeTurn).activeChats, 1)
+    }
+
     func testFamilyIncludesNestedChildrenButDoesNotMergeIndependentForkOrOtherChat() throws {
         try write("main", metadata("main") + start("round", root: "round") + usage("main", turn: "round", root: "round", output: 100))
         try write("child", metadata("child", parent: "main") + start("c", root: "round") + usage("child", turn: "c", root: "round", output: 30))

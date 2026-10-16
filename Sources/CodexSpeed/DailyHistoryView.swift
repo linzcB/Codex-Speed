@@ -16,6 +16,11 @@ struct DailyHistoryView: View {
                 .toggleStyle(.switch)
                 .onChange(of: monitor.includeSubagents) { _ in monitor.aggregationChanged() }
                 .font(.system(size: 11))
+            Toggle(L10n.text("计入 Codex auto review"), isOn: $monitor.includeAutoReview)
+                .toggleStyle(.switch)
+                .onChange(of: monitor.includeAutoReview) { _ in monitor.autoReviewChanged() }
+                .font(.system(size: 11))
+                .help(L10n.text("关闭后，从实时速度、会话合计、每日统计和导出中排除 Codex auto review；明细保留。"))
             HStack {
                 Text(L10n.text("日期")).foregroundStyle(.secondary)
                 Picker(L10n.text("统计日期"), selection: $monitor.dailySelectedDay) {
@@ -77,13 +82,21 @@ struct DailyHistoryView: View {
             }
 
             if let day = monitor.selectedDailyUsage {
+                if day.excludedAutoReview.requests > 0 {
+                    Text(L10n.text("已排除 auto review：输入 %@ / 输出 %@ tok · %@ 次调用", tokenText(day.excludedAutoReview.inputTokens), tokenText(day.excludedAutoReview.outputTokens), day.excludedAutoReview.requests))
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 summary(day.totals)
-                costSummary(day.totals)
-                Divider()
-                Text(L10n.text("使用模型 · %@ 种", day.models.count))
-                    .font(.system(size: 12, weight: .semibold))
-                ForEach(day.models) { model in
-                    modelRow(model)
+                if day.totals.requests > 0 {
+                    costSummary(day.totals)
+                    Divider()
+                    Text(L10n.text("使用模型 · %@ 种", day.models.count))
+                        .font(.system(size: 12, weight: .semibold))
+                    ForEach(day.models) { model in modelRow(model) }
+                } else {
+                    Text(L10n.text("当前筛选下没有计入的调用"))
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             } else if monitor.dailyResult?.isLoading == false {
                 Text(L10n.text("这一天暂无已记录的模型调用"))

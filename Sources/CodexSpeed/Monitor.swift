@@ -6,15 +6,16 @@ import SpeedCore
 
 @MainActor
 final class Monitor: ObservableObject {
-    @Published var sessions: [SessionSnapshot] = []
-    @Published var selectedID = "automatic"
-    @Published var now = Date()
+    @Published var sessions: [SessionSnapshot] = [] { didSet { invalidateStatistics() } }
+    @Published var selectedID = "automatic" { didSet { invalidateStatistics() } }
+    @Published var now = Date() { didSet { invalidateStatistics() } }
     @Published var message: String?
     @Published var folder: URL
     @Published var pinned = false
     @Published var history: [SpeedPoint] = []
-    @Published var metric: SpeedMetric = .continuousOutput
-    @Published var includeSubagents = true
+    @Published var metric: SpeedMetric = .continuousOutput { didSet { invalidateStatistics() } }
+    @Published var includeSubagents = true { didSet { invalidateStatistics() } }
+    @Published var includeAutoReview = false { didSet { invalidateStatistics() } }
     @Published var showDailyHistory = false
     @Published var dailySelectedDay = "today"
     @Published var dailyResult: DailyScanResult?
@@ -32,6 +33,32 @@ final class Monitor: ObservableObject {
     private let worker = DispatchQueue(label: "local.codexspeed.log-reader", qos: .utility)
     private var scanner: LogScanner
     private var timer: Timer?
+    private var timerInterval: TimeInterval = 0
+    private var started = false
+    private var observer: SessionDirectoryObserver?
+    private var eventRefresh: DispatchWorkItem?
+    private var eventNeedsDiscovery = false
+    private var eventLogPaths = Set<String>()
+    private var pendingLogPaths = Set<String>()
+    private var lastLiveScan = Date.distantPast
+    private var refreshPending = false
+    private var pendingForce = false
+    private var dailyRevision = 0
+    private var appliedDailyRevision = -1
+    private(set) var detailsVisible = false
+    private var cachedSession: SessionSnapshot?
+    private var sessionResolved = false
+    private var cachedGlobal: GlobalSpeed?
+    private var cachedCurrent: GlobalSpeed?
+    private var cachedRound: FamilyRound?
+    private var cachedCountedAgents: [AgentSnapshot]?
+    private let dayFormatter: DateFormatter = {
+        let value = DateFormatter()
+        value.calendar = Calendar(identifier: .gregorian)
+        value.locale = Locale(identifier: "en_US_POSIX")
+        value.dateFormat = "yyyy-MM-dd"
+        return value
+    }()
     private var busy = false
     private var generation = 0
     private var historyTurn = ""
@@ -48,6 +75,7 @@ final class Monitor: ObservableObject {
         dailyScanner = DailyStatisticsScanner(directory: directory)
         selectedID = UserDefaults.standard.string(forKey: "selectedSessionID") ?? "automatic"
         includeSubagents = UserDefaults.standard.object(forKey: "includeSubagents") as? Bool ?? true
+        includeAutoReview = UserDefaults.standard.bool(forKey: "includeAutoReview")
         // Adopt the requested output-only default once when upgrading. Further
         // launches keep the user's explicit choice among the three modes.
         if UserDefaults.standard.bool(forKey: "outputTimingDefaultApplied") {
@@ -58,26 +86,56 @@ final class Monitor: ObservableObject {
             UserDefaults.standard.set(SpeedMetric.continuousOutput.rawValue, forKey: "speedMetric")
         }
     }
+    private func invalidateStatistics() {
+        sessionResolved = false; cachedSession = nil
+        cachedGlobal = nil; cachedCurrent = nil; cachedRound = nil
+        cachedCountedAgents = nil
+    }
     var session: SessionSnapshot? {
-        if selectedID != "automatic" { return sessions.first { $0.id == selectedID } }
-        let recentActive = sessions.filter { includeSubagents ? $0.isActive(at: now) : $0.own.isActive(at: now) }
-        return recentActive.first ?? sessions.first
+        if sessionResolved { return cachedSession }
+        let value = selectedID != "automatic" ? sessions.first { $0.id == selectedID }
+            : sessions.first { $0.isActive(at: now, includeSubagents: includeSubagents, includeAutoReview: includeAutoReview) } ?? sessions.first
+        cachedSession = value; sessionResolved = true
+        return value
     }
-    var turn: Turn? { session?.latest }
+    var turn: Turn? { session?.latest?.filteringAutoReview(includeAutoReview) }
     var round: FamilyRound? {
+        if let cachedRound { return cachedRound }
         guard let session, let turn else { return nil }
-        return session.round(for: turn, includeSubagents: includeSubagents)
+        // Use the original turn: projecting the same turn twice would subtract
+        // review tokens twice. The round owns the single projection.
+        let value = session.round(for: session.latest ?? turn, includeSubagents: includeSubagents, includeAutoReview: includeAutoReview)
+        cachedRound = value
+        return value
     }
-    var totalUsage: Usage { session?.usage(includeSubagents: includeSubagents) ?? Usage() }
+    var totalUsage: Usage { session?.usage(includeSubagents: includeSubagents, includeAutoReview: includeAutoReview) ?? Usage() }
     var countedAgents: [AgentSnapshot] {
+        if let cachedCountedAgents { return cachedCountedAgents }
         guard let session else { return [] }
-        return includeSubagents ? session.participants : [session.own]
+        let value = (includeSubagents ? session.participants : [session.own])
+            .map { $0.filteringAutoReview(includeAutoReview) }.filter { !$0.isCompletelyExcluded }
+        cachedCountedAgents = value
+        return value
     }
+    var mainUsage: Usage { session?.own.usage(includeAutoReview: includeAutoReview) ?? Usage() }
+    var childUsage: Usage { session?.childUsage(includeAutoReview: includeAutoReview) ?? Usage() }
+    var activeSubagentCount: Int { session?.agents.filter { $0.isActive(at: now, includeAutoReview: includeAutoReview) }.count ?? 0 }
     var totalsAreComplete: Bool { countedAgents.allSatisfy { !$0.isLoading && $0.hasCumulativeUsage && $0.error == nil } }
     var isLoading: Bool { countedAgents.contains { $0.isLoading } }
-    var scopeText: String { includeSubagents ? L10n.text("含子 agent") : L10n.text("仅主 agent") }
-    var global: GlobalSpeed { GlobalSpeed(sessions: sessions, at: now, metric: metric, includeSubagents: includeSubagents) }
-    var currentSpeed: GlobalSpeed { GlobalSpeed(sessions: session.map { [$0] } ?? [], at: now, metric: metric, includeSubagents: includeSubagents) }
+    var scopeText: String {
+        let agents = includeSubagents ? L10n.text("含子 agent") : L10n.text("仅主 agent")
+        return includeAutoReview ? agents : agents + " · " + L10n.text("不含 auto review")
+    }
+    var global: GlobalSpeed {
+        if let cachedGlobal { return cachedGlobal }
+        let value = GlobalSpeed(sessions: sessions, at: now, metric: metric, includeSubagents: includeSubagents, includeAutoReview: includeAutoReview)
+        cachedGlobal = value; return value
+    }
+    var currentSpeed: GlobalSpeed {
+        if let cachedCurrent { return cachedCurrent }
+        let value = GlobalSpeed(sessions: session.map { [$0] } ?? [], at: now, metric: metric, includeSubagents: includeSubagents, includeAutoReview: includeAutoReview)
+        cachedCurrent = value; return value
+    }
     func agentRate(_ agent: AgentSnapshot) -> Double? {
         guard !agent.isLoading, let turn = agent.latest else { return nil }
         let sampleAt = turn.end ?? (agent.isActive(at: now) ? now : turn.lastUsageAt ?? agent.modifiedAt)
@@ -122,33 +180,85 @@ final class Monitor: ObservableObject {
         return session?.own.isActive(at: now) == true ? L10n.text("等待首段文字记录") : L10n.text("未记录可见文字")
     }
     func start() {
+        started = true
+        observeDirectory()
         refresh(force: true)
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+    }
+    func stop() {
+        started = false; detailsVisible = false; generation += 1
+        timer?.invalidate(); timer = nil
+        eventRefresh?.cancel(); eventRefresh = nil
+        observer = nil
+    }
+    private func observeDirectory() {
+        eventRefresh?.cancel(); eventRefresh = nil; eventNeedsDiscovery = false
+        eventLogPaths.removeAll(); pendingLogPaths.removeAll()
+        let currentGeneration = generation
+        observer = SessionDirectoryObserver(directory: folder) { [weak self] change in
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.started, self.generation == currentGeneration else { return }
+                self.dailyRevision += 1
+                self.eventNeedsDiscovery = self.eventNeedsDiscovery || change.requiresDiscovery
+                self.eventLogPaths.formUnion(change.modifiedLogs)
+                guard self.eventRefresh == nil else { return }
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self, self.started, self.generation == currentGeneration else { return }
+                    self.eventRefresh = nil
+                    let force = self.eventNeedsDiscovery; self.eventNeedsDiscovery = false
+                    self.refresh(force: force)
+                }
+                self.eventRefresh = work
+                let delay = max(0.15, 1 - Date().timeIntervalSince(self.lastLiveScan))
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            }
+        }
+    }
+    private func scheduleTimer() {
+        guard started else { timer?.invalidate(); timer = nil; return }
+        let interval = sessions.contains(where: \.isLoading) ? 0.25 : RefreshPolicy.interval(isActive: isLive, isVisible: detailsVisible,
+                                              isObserving: observer?.isWatching == true)
+        // File events must not keep postponing the timer: history refresh and
+        // elapsed-time updates still need a steady cadence during busy streams.
+        if timer?.isValid == true, timerInterval == interval { return }
+        timer?.invalidate(); timerInterval = interval
+        let next = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
-        if let timer { RunLoop.main.add(timer, forMode: .common) }
+        next.tolerance = min(3, interval * 0.1)
+        timer = next
+        RunLoop.main.add(next, forMode: .common)
+    }
+    func setDetailsVisible(_ visible: Bool) {
+        guard detailsVisible != visible else { return }
+        detailsVisible = visible
+        if visible {
+            now = Date()
+            if detailsVisible && showDailyHistory { refreshDaily() }
+            refresh()
+        } else { scheduleTimer() }
+    }
+    func systemDidWake() {
+        dailyRevision += 1
+        refresh(force: true)
+        if detailsVisible && showDailyHistory { refreshDaily(force: true) }
     }
     func localizationChanged() {
         objectWillChange.send()
         didUpdate?()
         refresh(force: true)
-        if showDailyHistory { refreshDaily() }
+        if detailsVisible && showDailyHistory { refreshDaily() }
     }
     private func tick() {
-        now = Date()
-        didUpdate?()
         refresh()
-        if showDailyHistory && (dailyResult?.isLoading != false || now.timeIntervalSince(lastDailyScan) >= 10) {
-            refreshDaily()
+        if detailsVisible && showDailyHistory {
+            let elapsed = Date().timeIntervalSince(lastDailyScan)
+            let changed = dailyRevision != appliedDailyRevision || observer?.isWatching != true || elapsed >= 60
+            if dailyResult?.isLoading != false || (changed && elapsed >= 10) { refreshDaily() }
         }
     }
     var todayKey: String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: dailyResult?.timeZoneIdentifier ?? TimeZone.current.identifier) ?? .current
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: now)
+        dayFormatter.timeZone = TimeZone(identifier: dailyResult?.timeZoneIdentifier ?? TimeZone.current.identifier) ?? .current
+        return dayFormatter.string(from: now)
     }
     var selectedDailyUsage: DailyUsage? {
         dailyResult?.days.first { $0.day == (dailySelectedDay == "today" ? todayKey : dailySelectedDay) }
@@ -157,48 +267,71 @@ final class Monitor: ObservableObject {
         guard !dailyBusy else { return }
         dailyBusy = true
         lastDailyScan = Date()
+        let revision = dailyRevision
         let scanner = dailyScanner
         let currentGeneration = generation
         let include = includeSubagents
+        let includeReview = includeAutoReview
         let languageCode = L10n.current.languageCode
         dailyWorker.async { [weak self] in
-            let result = scanner.scan(includeSubagents: include, force: force)
+            let result = scanner.scan(includeSubagents: include, includeAutoReview: includeReview, force: force)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.dailyBusy = false
                 guard self.generation == currentGeneration, self.includeSubagents == include,
+                      self.includeAutoReview == includeReview,
                       L10n.current.languageCode == languageCode else {
-                    if self.showDailyHistory { self.refreshDaily(force: true) }; return
+                    if self.detailsVisible && self.showDailyHistory { self.refreshDaily(force: true) }; return
                 }
                 self.dailyResult = result
-                if result.isLoading && self.showDailyHistory {
+                self.appliedDailyRevision = revision
+                if result.isLoading && self.detailsVisible && self.showDailyHistory {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                        if self?.showDailyHistory == true { self?.refreshDaily() }
+                        if self?.detailsVisible == true && self?.showDailyHistory == true { self?.refreshDaily() }
                     }
                 }
             }
         }
     }
     func refresh(force: Bool = false) {
-        guard !busy else { return }
+        let requestedForce = force || eventNeedsDiscovery
+        let changedPaths = eventLogPaths
+        eventLogPaths.removeAll()
+        eventNeedsDiscovery = false
+        eventRefresh?.cancel(); eventRefresh = nil
+        guard !busy else {
+            refreshPending = true; pendingForce = pendingForce || requestedForce
+            pendingLogPaths.formUnion(changedPaths); return
+        }
+        let force = requestedForce || pendingForce
+        let paths = changedPaths.union(pendingLogPaths)
+        pendingLogPaths.removeAll()
+        pendingForce = false; refreshPending = false
         busy = true
+        lastLiveScan = Date()
+        let discoveryInterval = RefreshPolicy.discoveryInterval(isObserving: observer?.isWatching == true)
         let scanner = scanner
         let currentGeneration = generation
         let preferredID = selectedID
+        let includeReview = includeAutoReview
         let languageCode = L10n.current.languageCode
         worker.async { [weak self] in
-            let result = scanner.scan(force: force, preferredID: preferredID)
+            let result = scanner.scan(force: force, preferredID: preferredID, discoveryInterval: discoveryInterval,
+                                      changedLogPaths: paths, includeAutoReview: includeReview)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.busy = false
-                guard self.generation == currentGeneration, L10n.current.languageCode == languageCode else {
-                    self.refresh(force: true); return
+                guard self.generation == currentGeneration, L10n.current.languageCode == languageCode,
+                      self.includeAutoReview == includeReview else {
+                    if self.started { self.refresh(force: true) }; return
                 }
                 self.sessions = result.sessions
                 self.message = result.message
                 self.now = Date()
                 self.updateHistory()
                 self.didUpdate?()
+                if self.refreshPending { self.refresh() }
+                else { self.scheduleTimer() }
             }
         }
     }
@@ -209,9 +342,16 @@ final class Monitor: ObservableObject {
     func aggregationChanged() {
         UserDefaults.standard.set(includeSubagents, forKey: "includeSubagents")
         dailyResult = nil; lastDailyScan = .distantPast
-        if showDailyHistory { refreshDaily() }
+        if detailsVisible && showDailyHistory { refreshDaily() }
         historyTurn = ""; history.removeAll(); historySampleAt = nil
         updateHistory(); didUpdate?()
+    }
+    func autoReviewChanged() {
+        UserDefaults.standard.set(includeAutoReview, forKey: "includeAutoReview")
+        dailyResult = nil; lastDailyScan = .distantPast
+        if detailsVisible && showDailyHistory { refreshDaily() }
+        historyTurn = ""; history.removeAll(); historySampleAt = nil
+        updateHistory(); didUpdate?(); refresh()
     }
     func metricChanged() {
         UserDefaults.standard.set(metric.rawValue, forKey: "speedMetric")
@@ -227,7 +367,7 @@ final class Monitor: ObservableObject {
         alert.runModal()
     }
     private func updateHistory() {
-        let key = metric.rawValue + ":global:" + String(includeSubagents)
+        let key = metric.rawValue + ":global:" + String(includeSubagents) + ":review:" + String(includeAutoReview)
         if key != historyTurn {
             historyTurn = key; history.removeAll(); historySampleAt = nil
         }
@@ -255,23 +395,29 @@ final class Monitor: ObservableObject {
         scanner = LogScanner(directory: url); generation += 1
         dailyScanner = DailyStatisticsScanner(directory: url)
         dailyResult = nil; dailySelectedDay = "today"; lastDailyScan = .distantPast
-        if showDailyHistory { refreshDaily(force: true) }
+        observeDirectory()
+        if detailsVisible && showDailyHistory { refreshDaily(force: true) }
         sessions = []; selectedID = "automatic"; history = []
         message = nil; didUpdate?(); refresh(force: true)
     }
     func exportCSV() {
-        guard let session else { return }
+        guard let csv = csvContents() else { return }
         let panel = NSSavePanel()
         panel.title = L10n.text("导出最近的速度记录")
         panel.nameFieldStringValue = "Codex-Speed.csv"
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try csv.write(to: url, atomically: true, encoding: .utf8) }
+        catch { message = L10n.text("导出失败：%@", error.localizedDescription) }
+    }
+    func csvContents() -> String? {
+        guard let session else { return nil }
         var csv = "turn_id,model,start,completed,output_tokens,reasoning_tokens,input_tokens,calls,elapsed_seconds,average_tokens_per_second,tool_seconds_to_sample,non_tool_seconds_to_sample,non_tool_average_tokens_per_second,continuous_output_tokens,continuous_output_seconds,continuous_output_calls,continuous_output_estimated_tokens_per_second,turn_first_token_delay_seconds,first_visible_output_delay_estimated_seconds,selected_metric,thread_id,agent,root_turn_id,row_scope\n"
         let formatter = ISO8601DateFormatter()
         func quote(_ string: String) -> String { "\"" + string.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
         func decimal(_ value: Double?) -> String { value.map { String(format: "%.3f", $0) } ?? "" }
         for agent in countedAgents {
-          for turn in agent.turns {
+          for turn in agent.turns where turn.hasUsage {
             var fields: [String] = [turn.id, turn.model, formatter.string(from: turn.start),
                 turn.end.map(formatter.string(from:)) ?? "", String(turn.usage.output),
                 String(turn.usage.reasoning), String(turn.usage.input), String(turn.calls)]
@@ -296,8 +442,7 @@ final class Monitor: ObservableObject {
         total[6] = String(totalUsage.input); total[20] = session.id; total[21] = session.label
         total[23] = "family_lifetime"
         csv += total.map(quote).joined(separator: ",") + "\n"
-        do { try csv.write(to: url, atomically: true, encoding: .utf8) }
-        catch { message = L10n.text("导出失败：%@", error.localizedDescription) }
+        return csv
     }
 }
 

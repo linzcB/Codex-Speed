@@ -52,6 +52,7 @@ Release builds are ad hoc signed and are **not notarized by Apple**. If macOS bl
 - **Choose a chat:** use **Current chat** in the panel. **Most recent (automatic)** follows log activity; it does not detect which chat is selected inside Codex.
 - **Pin the panel:** click the pin button to keep a floating sidebar open.
 - **Include agents:** toggle **Include subagents**. Both menu bar rows, token totals, and daily history use this choice.
+- **Exclude auto review:** leave **Include Codex auto review** off (the default) to exclude it from both live speed rows, active counts, session totals, daily history, and CSV exports. The same switch appears in both views; original agent details remain available.
 - **Change language:** open **… → Language → Follow system / 简体中文 / English**. The choice takes effect immediately and is remembered.
 - **Choose logs or export:** both options are in the **…** menu. Logs default to `~/.codex/sessions`, or `sessions` under `CODEX_HOME`.
 
@@ -78,7 +79,7 @@ cd Codex-Speed
 open "dist/Codex Speed.app"
 ```
 
-Run `swift test` for the test suite. To build a distributable app and checksum file, run `./scripts/package-release.sh`.
+Run `swift test` for the test suite. Run `./scripts/benchmark.sh` for a generated-data performance benchmark; see [performance notes](docs/PERFORMANCE.md). To build a distributable app and checksum file, run `./scripts/package-release.sh`.
 
 ## Contribute
 

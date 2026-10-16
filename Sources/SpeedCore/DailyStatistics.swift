@@ -46,6 +46,7 @@ public struct DailyUsage: Identifiable, Sendable {
     public var id: String { day }
     public var totals: DailyTotals
     public var models: [DailyModelUsage]
+    public var excludedAutoReview = DailyTotals()
 }
 
 public struct DailyScanResult: Sendable {
@@ -195,7 +196,8 @@ public final class DailyStatisticsScanner: @unchecked Sendable {
     public init(directory: URL, timeZone: TimeZone = .current) {
         self.directory = directory; self.timeZone = timeZone
     }
-    public func scan(includeSubagents: Bool = true, maxBytes: Int = 16 * 1024 * 1024, force: Bool = false) -> DailyScanResult {
+    public func scan(includeSubagents: Bool = true, includeAutoReview: Bool = true,
+                     maxBytes: Int = 16 * 1024 * 1024, force: Bool = false) -> DailyScanResult {
         lock.lock(); defer { lock.unlock() }
         let fm = FileManager.default
         var isDirectory: ObjCBool = false
@@ -264,19 +266,25 @@ public final class DailyStatisticsScanner: @unchecked Sendable {
             selected[log.id] = log; selectedSizes[log.id] = size
         }
         var buckets: [String: [String: DailyTotals]] = [:]
+        var excludedByDay: [String: DailyTotals] = [:]
         var omitted = 0, legacy = 0
         for log in selected.values {
             guard let statistics = log.dailyStatistics else { continue }
             omitted += statistics.omittedRecords; legacy += statistics.legacyRequests
             for (day, models) in statistics.buckets {
-                for (model, value) in models { buckets[day, default: [:]][model, default: DailyTotals()].add(value) }
+                for (model, value) in models {
+                    if !includeAutoReview && UsageFilter.isAutoReview(model: model) {
+                        excludedByDay[day, default: DailyTotals()].add(value)
+                    } else { buckets[day, default: [:]][model, default: DailyTotals()].add(value) }
+                }
             }
         }
-        let days = buckets.keys.sorted(by: >).map { day in
-            let models = buckets[day]!.map { DailyModelUsage(model: $0.key, totals: $0.value) }.sorted { $0.model < $1.model }
+        let days = Set(buckets.keys).union(excludedByDay.keys).sorted(by: >).map { day in
+            let models = (buckets[day] ?? [:]).map { DailyModelUsage(model: $0.key, totals: $0.value) }.sorted { $0.model < $1.model }
             var totals = DailyTotals()
             for model in models { totals.add(model.totals) }
-            return DailyUsage(day: day, totals: totals, models: models)
+            return DailyUsage(day: day, totals: totals, models: models,
+                              excludedAutoReview: excludedByDay[day] ?? DailyTotals())
         }
         var notes: [String] = []
         if warning { notes.append(L10n.text("部分日志缺失、无法读取或记录过大，历史统计可能不完整。")) }

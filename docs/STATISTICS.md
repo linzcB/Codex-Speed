@@ -38,3 +38,11 @@ The latest settings do not retrospectively reprice older calls. Logged settings 
 The app reads local logs. Cloud-only and unavailable remote logs cannot be reconstructed from chat text or the workspace folder. Initial scans and incomplete records can temporarily reduce coverage; the UI reports those conditions.
 
 Chat titles, model identifiers, aggregation keys, and CSV column names keep their original values when the interface language changes.
+
+## Auto review filter
+
+Both views share **Include Codex auto review**, which defaults to off and remembers your choice. The filter matches recorded model IDs `codex-auto-review` and `codex-auto-review-*`, per request; chat titles and agent names are not used. Excluded input, output, and call counts appear separately. Daily totals, cache ratios, weighted speed, model rows, and cost-coverage denominators use the included calls. A day containing only excluded calls remains selectable.
+
+The filter also applies to both live speed rows, active chat/agent counts, current-round and lifetime session usage, and CSV exports. Mixed-model turns retain only included requests and their paired output samples. Original agent details remain visible and are labeled when excluded. An agent currently running auto review is excluded from active counts, while its earlier paid-model usage remains in lifetime totals.
+
+The subagent toggle remains independent. The app does not modify logs. Missing log prefixes are read once in bounded background batches for per-model lifetime accounting; the UI marks loading or incomplete coverage. Requests without an identifiable model remain included. Turning the switch on restores the logged usage; it does not assign a new price or confirm a charge.

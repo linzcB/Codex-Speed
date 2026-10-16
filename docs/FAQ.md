@@ -33,3 +33,9 @@ The current build is ad hoc signed and is not notarized. Review the source, rele
 ### Can I change languages?
 
 Use **… → Language**. Follow system, 简体中文, and English are supported. The preference is saved; user-written chat titles and agent names remain unchanged.
+
+### How often does it refresh?
+
+Active monitoring and visible panels use a roughly one-second refresh. When idle with the panel hidden, file-system notifications wake the app for relevant log or title changes, with a 30-second fallback check. Full directory discovery has a 60-second recovery interval; new files and changes to older, untracked chats request discovery immediately. If notifications cannot start, one-second polling and ten-second discovery remain enabled.
+
+Automatic daily-history scanning pauses when the panel is hidden. Reopening it refreshes the data. Unchanged menu bar text is not repainted.

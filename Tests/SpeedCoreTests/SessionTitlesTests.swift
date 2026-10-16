@@ -64,6 +64,36 @@ final class SessionTitlesTests: XCTestCase {
         XCTAssertEqual(after.sessions.first?.modifiedAt, before.sessions.first?.modifiedAt)
     }
 
+    func testCachedNamesFollowRequestedIDsAndRemovedDatabaseNames() throws {
+        let db = try database("""
+            PRAGMA journal_mode=WAL;
+            CREATE TABLE threads (id TEXT PRIMARY KEY, name TEXT);
+            INSERT INTO threads VALUES ('one', 'First'), ('two', 'Second');
+            """)
+        defer { sqlite3_close(db) }
+        try title("one", "Index fallback").write(to: index)
+        let names = SessionTitles(directory: root)
+        XCTAssertEqual(names.names(for: ["one"]), ["one": "First"])
+        XCTAssertEqual(names.names(for: ["two"]), ["two": "Second"])
+        XCTAssertEqual(names.names(for: ["one"]), ["one": "First"])
+        XCTAssertEqual(sqlite3_exec(db, "UPDATE threads SET name = NULL WHERE id = 'one'", nil, nil, nil), SQLITE_OK)
+        XCTAssertEqual(names.names(for: ["one"]), ["one": "Index fallback"])
+    }
+
+    func testNewDatabaseVersionInvalidatesCachedLocation() throws {
+        let db = try database("CREATE TABLE threads (id TEXT PRIMARY KEY, name TEXT); INSERT INTO threads VALUES ('one', 'Old database');")
+        sqlite3_close(db)
+        let names = SessionTitles(directory: root)
+        XCTAssertEqual(names.names(for: ["one"]), ["one": "Old database"])
+        var newer: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(root.appendingPathComponent("state_6.sqlite").path, &newer), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(newer, "CREATE TABLE threads (id TEXT PRIMARY KEY, name TEXT); INSERT INTO threads VALUES ('one', 'New database');", nil, nil, nil), SQLITE_OK)
+        sqlite3_close(newer)
+        XCTAssertEqual(names.names(for: ["one"]), ["one": "New database"])
+        try FileManager.default.removeItem(at: root.appendingPathComponent("state_6.sqlite"))
+        XCTAssertEqual(names.names(for: ["one"]), ["one": "Old database"])
+    }
+
     func testIndexFallbackHandlesPartialAppendAndRenames() throws {
         try chat("chat-1")
         try title("chat-1", "原始标题").write(to: index)

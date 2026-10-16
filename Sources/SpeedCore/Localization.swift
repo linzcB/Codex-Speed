@@ -36,7 +36,15 @@ public struct AppLocalizer: Sendable {
         #endif
     }
 
+    private static let localizedBundles: [String: Bundle] = {
+        Dictionary(uniqueKeysWithValues: ["en", "zh-Hans"].map { ($0, resolveBundle(for: $0)) })
+    }()
+
     static func localizedBundle(for code: String) -> Bundle {
+        localizedBundles[code] ?? resourceBundle
+    }
+
+    private static func resolveBundle(for code: String) -> Bundle {
         // SwiftPM normalizes lproj names to lowercase; the standalone app keeps
         // their conventional spelling. Resolve both without relying on the OS
         // language, so an explicit override also works in either build.

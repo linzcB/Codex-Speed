@@ -163,3 +163,21 @@
 "顺序：输入 / 缓存读取 / 缓存写入 / 输出" = "Order: input / cache read / cache write / output";
 "首 token 延迟（日志）" = "First-token latency (logged)";
 "首字延迟（估算）" = "First-text latency (est.)";
+
+"计入 Codex auto review" = "Include Codex auto review";
+
+"关闭后，从每日用量、缓存、均速和费用覆盖中排除 Codex auto review；不修改原始日志。" = "When off, excludes Codex auto review from daily usage, cache statistics, average speed, and cost coverage. Original logs stay unchanged.";
+
+"已排除 auto review：输入 %@ / 输出 %@ tok · %@ 次调用" = "Auto review excluded: %@ input / %@ output tok · %@ calls";
+
+"当前筛选下没有计入的调用" = "No included calls with these filters";
+
+"不含 auto review" = "auto review excluded";
+
+"关闭后，从实时速度、会话合计、每日统计和导出中排除 Codex auto review；明细保留。" = "When off, excludes Codex auto review from live speeds, session totals, daily statistics, and exports. Original details remain available.";
+
+"明细显示原始记录；排除项不参与合计。" = "Details show original records. Excluded usage does not contribute to totals.";
+
+"auto review · 已从合计排除" = "Auto review · excluded from totals";
+
+"已排除历史 auto review 用量" = "Historical auto review usage excluded";

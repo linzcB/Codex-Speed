@@ -11,6 +11,9 @@ public struct AgentSnapshot: Identifiable, Sendable {
     public var serviceTier: ApiServiceTier
     public var turns: [Turn]
     public var totalUsage: Usage
+    public var autoReviewUsage: Usage
+    public var hasModelUsageBreakdown: Bool
+    private var excludesAutoReview = false
     public var hasCumulativeUsage: Bool
     public var modifiedAt: Date
     public var isLoading: Bool
@@ -21,12 +24,30 @@ public struct AgentSnapshot: Identifiable, Sendable {
     public init(log: SessionLog) {
         id = log.id; label = log.agentPath ?? log.agentNickname ?? log.label
         labelIsFallback = log.agentPath == nil && (log.agentNickname == nil ? log.labelIsFallback : log.hasFallbackNickname)
-        model = log.model; serviceTier = log.serviceTier; turns = log.turns; totalUsage = log.lifetimeUsage
+        model = log.model; serviceTier = log.serviceTier; turns = log.turnsWithUsageBreakdown; totalUsage = log.lifetimeUsage
+        autoReviewUsage = log.autoReviewUsage; hasModelUsageBreakdown = log.hasModelUsageBreakdown
         hasCumulativeUsage = log.hasCumulativeUsage; modifiedAt = log.modifiedAt
         isLoading = log.hasUnreadBytes; hasSkippedHistory = log.hasSkippedHistory; error = log.error
     }
-    public func isActive(at date: Date) -> Bool {
+    public var isAutoReview: Bool {
+        UsageFilter.isAutoReview(model: model) || latest.map { UsageFilter.isAutoReview(model: $0.model) } == true
+    }
+    public var isCompletelyExcluded: Bool { excludesAutoReview && isAutoReview && totalUsage.total == 0 && !isLoading && hasModelUsageBreakdown }
+    public func usage(includeAutoReview: Bool) -> Usage {
+        includeAutoReview || excludesAutoReview ? totalUsage : totalUsage.subtracting(autoReviewUsage)
+    }
+    public func filteringAutoReview(_ include: Bool) -> AgentSnapshot {
+        guard !include, !excludesAutoReview else { return self }
+        var result = self
+        result.totalUsage = usage(includeAutoReview: false)
+        result.turns = turns.map { $0.filteringAutoReview(false) }
+        result.hasCumulativeUsage = hasCumulativeUsage && hasModelUsageBreakdown
+        result.excludesAutoReview = true
+        return result
+    }
+    public func isActive(at date: Date, includeAutoReview: Bool = true) -> Bool {
         guard let latest, latest.end == nil else { return false }
+        if (!includeAutoReview || excludesAutoReview) && isAutoReview { return false }
         return date.timeIntervalSince(modifiedAt) < 300
     }
 }
@@ -43,14 +64,21 @@ public struct FamilyRound: Sendable {
 
 extension SessionSnapshot {
     public var childUsage: Usage { agents.reduce(into: Usage()) { $0.add($1.totalUsage) } }
+    public func childUsage(includeAutoReview: Bool) -> Usage {
+        agents.reduce(into: Usage()) { $0.add($1.usage(includeAutoReview: includeAutoReview)) }
+    }
     public var totalUsage: Usage { var value = own.totalUsage; value.add(childUsage); return value }
-    public func usage(includeSubagents: Bool) -> Usage { includeSubagents ? totalUsage : own.totalUsage }
+    public func usage(includeSubagents: Bool, includeAutoReview: Bool = true) -> Usage {
+        let selected = includeSubagents ? participants : [own]
+        return selected.reduce(into: Usage()) { $0.add($1.usage(includeAutoReview: includeAutoReview)) }
+    }
     public var participants: [AgentSnapshot] { [own] + agents }
     public var isLoading: Bool { participants.contains { $0.isLoading } }
     public var totalsAreComplete: Bool {
         !isLoading && participants.allSatisfy { $0.hasCumulativeUsage && $0.error == nil }
     }
-    public func round(for main: Turn, includeSubagents: Bool = true) -> FamilyRound {
+    public func round(for main: Turn, includeSubagents: Bool = true, includeAutoReview: Bool = true) -> FamilyRound {
+        let main = main.filteringAutoReview(includeAutoReview)
         guard includeSubagents else { return FamilyRound(main: main, children: [], childCount: 0) }
         // Resolve explicit parent-turn chains when older records omit root_turn_id.
         let allTurns = participants.flatMap(\.turns)
@@ -66,11 +94,15 @@ extension SessionSnapshot {
             }
             return nil
         }
-        let selected = agents.map { agent in agent.turns.filter { $0.hasUsage && rootID($0) == main.id } }
+        let selected = agents.map { agent in
+            agent.turns.filter { rootID($0) == main.id }.map { $0.filteringAutoReview(includeAutoReview) }.filter(\.hasUsage)
+        }
         return FamilyRound(main: main, children: selected.flatMap { $0 }, childCount: selected.filter { !$0.isEmpty }.count)
     }
     public var latestRound: FamilyRound? { latest.map { round(for: $0) } }
-    public func isActive(at date: Date) -> Bool { participants.contains { $0.isActive(at: date) } }
+    public func isActive(at date: Date, includeSubagents: Bool = true, includeAutoReview: Bool = true) -> Bool {
+        (includeSubagents ? participants : [own]).contains { $0.isActive(at: date, includeAutoReview: includeAutoReview) }
+    }
 }
 
 public struct GlobalSpeed: Sendable {
@@ -81,18 +113,20 @@ public struct GlobalSpeed: Sendable {
     public var activeChats: Int
     public var sampleAt: Date?
 
-    public init(sessions: [SessionSnapshot], at date: Date, metric: SpeedMetric, includeSubagents: Bool = true) {
+    public init(sessions: [SessionSnapshot], at date: Date, metric: SpeedMetric, includeSubagents: Bool = true,
+                includeAutoReview: Bool = true) {
         var seen = Set<String>()
         var values: [Double] = []
         var times: [Date] = []
         activeAgents = 0; activeChats = 0
         for session in sessions {
             let participants = includeSubagents ? session.participants : [session.own]
-            if participants.contains(where: { $0.isActive(at: date) }) { activeChats += 1 }
-            for agent in participants where seen.insert(agent.id).inserted && agent.isActive(at: date) {
+            if participants.contains(where: { $0.isActive(at: date, includeAutoReview: includeAutoReview) }) { activeChats += 1 }
+            for agent in participants where seen.insert(agent.id).inserted && agent.isActive(at: date, includeAutoReview: includeAutoReview) {
                 activeAgents += 1
-                guard !agent.isLoading, let turn = agent.latest,
-                      let rate = turn.rate(at: date, metric: metric), rate.isFinite else { continue }
+                guard !agent.isLoading, let originalTurn = agent.latest else { continue }
+                let turn = originalTurn.filteringAutoReview(includeAutoReview)
+                guard let rate = turn.rate(at: date, metric: metric), rate.isFinite else { continue }
                 values.append(rate)
                 if let time = metric == .continuousOutput ? turn.outputSamples.last?.end : turn.lastUsageAt {
                     times.append(time)

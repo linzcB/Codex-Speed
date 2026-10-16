@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let readout = MenuReadout(frame: NSRect(x: 0, y: 0, width: 104, height: 25))
     var panel: NSPanel?
     var localClickMonitor: Any?
+    private var lastReadoutDescription: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: 104)
@@ -65,6 +66,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(localeChanged),
             name: NSLocale.currentLocaleDidChangeNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(systemDidWake),
+            name: NSWorkspace.didWakeNotification, object: nil)
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(showDetails),
             name: Notification.Name("local.codexspeed.monitor.showDetails"), object: nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.showDetails() }
@@ -73,12 +76,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Dashboard(monitor: monitor, onPin: { [weak self] in self?.togglePin() })
     }
     private func updateReadout() {
-        statusItem.button?.setAccessibilityLabel(L10n.text("Codex Speed 速度监测"))
         let global = monitor.global
-        readout.speed = "Σ \(rateText(global.sum)) tok/s"
-        readout.current = L10n.text("当前 %@ tok/s", rateText(monitor.currentSpeed.sum))
-        readout.needsDisplay = true
+        let speed = "Σ \(rateText(global.sum)) tok/s"
+        let current = L10n.text("当前 %@ tok/s", rateText(monitor.currentSpeed.sum))
+        if readout.speed != speed || readout.current != current {
+            readout.speed = speed; readout.current = current
+            readout.needsDisplay = true
+        }
         let description = L10n.text("全局 %@ · %@ · %@\n%@ 个活跃聊天 · %@/%@ 个 agent 会话有速度样本（%@）\n当前会话：%@", monitor.metricTitle, readout.speed, readout.current, global.activeChats, global.sampledAgents, global.activeAgents, monitor.scopeText, monitor.session?.displayLabel ?? L10n.text("等待会话"))
+        guard description != lastReadoutDescription else { return }
+        lastReadoutDescription = description
+        statusItem.button?.setAccessibilityLabel(L10n.text("Codex Speed 速度监测"))
         statusItem.button?.toolTip = description + L10n.text("\n点击查看详情；右键退出。")
         statusItem.button?.setAccessibilityValue(description)
     }
@@ -104,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if monitor.pinned, let panel {
             constrainPanel()
             panel.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+            monitor.setDetailsVisible(true)
             return
         }
         monitor.pinned = false
@@ -123,6 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         dropdown = window
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        monitor.setDetailsVisible(true)
     }
     @objc func togglePin() {
         if monitor.pinned {
@@ -155,11 +165,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         installDashboard(in: window, size: window.contentLayoutRect.size, rounded: false)
         panel = window; monitor.pinned = true
         window.makeKeyAndOrderFront(nil)
+        monitor.setDetailsVisible(true)
         NSApp.activate(ignoringOtherApps: true)
     }
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window === panel else { return }
+        window.contentView = nil
         monitor.pinned = false; panel = nil
+        monitor.setDetailsVisible(dropdown?.isVisible == true)
     }
     func windowDidChangeScreen(_ notification: Notification) { constrainPanel() }
     func applicationDidResignActive(_ notification: Notification) { closeDropdown() }
@@ -167,7 +180,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         showDetails(); return true
     }
     private func closeDropdown() {
-        dropdown?.orderOut(nil); dropdown = nil
+        // Release the hosting view as well as hiding its window. A retained,
+        // hidden dashboard must not keep observing and rendering live updates.
+        let window = dropdown
+        dropdown = nil
+        window?.contentView = nil
+        window?.close()
+        monitor.setDetailsVisible(panel?.isVisible == true)
     }
     private func anchorRect() -> NSRect? {
         guard let button = statusItem.button, let window = button.window else { return nil }
@@ -229,6 +248,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func localeChanged() {
         if monitor.language == .system { monitor.localizationChanged() }
     }
+    @objc private func systemDidWake() { monitor.systemDidWake() }
+    func applicationWillTerminate(_ notification: Notification) { monitor.stop() }
     @objc func quit() { NSApp.terminate(nil) }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
@@ -243,9 +264,10 @@ struct CodexSpeedMain {
             let zone = zoneIndex.flatMap { $0 + 1 < arguments.count ? TimeZone(identifier: arguments[$0 + 1]) : nil } ?? .current
             let scanner = DailyStatisticsScanner(directory: URL(fileURLWithPath: arguments[2]), timeZone: zone)
             let include = !arguments.contains("--main-only")
-            var result = scanner.scan(includeSubagents: include, maxBytes: 32 * 1024 * 1024, force: true)
+            let includeReview = !arguments.contains("--exclude-auto-review")
+            var result = scanner.scan(includeSubagents: include, includeAutoReview: includeReview, maxBytes: 32 * 1024 * 1024, force: true)
             for _ in 0..<10000 where result.isLoading {
-                result = scanner.scan(includeSubagents: include, maxBytes: 32 * 1024 * 1024)
+                result = scanner.scan(includeSubagents: include, includeAutoReview: includeReview, maxBytes: 32 * 1024 * 1024)
             }
             func totals(_ t: DailyTotals) -> [String: Any] {
                 ["input_tokens": t.inputTokens, "output_tokens": t.outputTokens,
@@ -265,6 +287,7 @@ struct CodexSpeedMain {
             let days: [[String: Any]] = result.days.map { day in
                 var row = totals(day.totals)
                 row["date"] = day.day
+                row["excluded_auto_review"] = totals(day.excludedAutoReview)
                 row["models"] = day.models.map { model -> [String: Any] in
                     var row = totals(model.totals); row["model"] = model.model; return row
                 }
@@ -272,6 +295,7 @@ struct CodexSpeedMain {
             }
             let report: [String: Any] = ["timezone": result.timeZoneIdentifier,
                 "include_subagents": include, "is_loading": result.isLoading,
+                "include_auto_review": includeReview,
                 "files_read": result.filesRead, "total_files": result.totalFiles,
                 "message": result.message as Any? ?? NSNull(), "days": days,
                 "price_checked_date": ApiPriceCatalog.checkedDate,
@@ -282,17 +306,19 @@ struct CodexSpeedMain {
         }
         if arguments.count >= 4, arguments[1] == "--inspect-session" {
             let scanner = LogScanner(directory: URL(fileURLWithPath: arguments[3]))
-            var result = scanner.scan(force: true, preferredID: arguments[2])
-            for _ in 0..<100 where result.sessions.contains(where: \.isLoading) {
-                result = scanner.scan(preferredID: arguments[2])
+            let includeReview = !arguments.contains("--exclude-auto-review")
+            var result = scanner.scan(force: true, preferredID: arguments[2], includeAutoReview: includeReview)
+            for _ in 0..<1000 where result.sessions.contains(where: \.isLoading) {
+                result = scanner.scan(preferredID: arguments[2], includeAutoReview: includeReview)
             }
             guard let session = result.sessions.first(where: { $0.id == arguments[2] }) else {
                 print("{\"error\":\"session not found\"}"); return
             }
             let includeSubagents = !arguments.contains("--main-only")
-            let global = GlobalSpeed(sessions: result.sessions, at: Date(), metric: .continuousOutput, includeSubagents: includeSubagents)
-            let current = GlobalSpeed(sessions: [session], at: Date(), metric: .continuousOutput, includeSubagents: includeSubagents)
-            let usage = session.usage(includeSubagents: includeSubagents)
+            let global = GlobalSpeed(sessions: result.sessions, at: Date(), metric: .continuousOutput, includeSubagents: includeSubagents, includeAutoReview: includeReview)
+            let current = GlobalSpeed(sessions: [session], at: Date(), metric: .continuousOutput, includeSubagents: includeSubagents, includeAutoReview: includeReview)
+            let usage = session.usage(includeSubagents: includeSubagents, includeAutoReview: includeReview)
+            let counted = (includeSubagents ? session.participants : [session.own]).map { $0.filteringAutoReview(includeReview) }.filter { !$0.isCompletelyExcluded }
             let agents: [[String: Any]] = session.participants.map { agent in
                 ["id": agent.id, "label": agent.displayLabel, "output": agent.totalUsage.output,
                  "input": agent.totalUsage.input, "reasoning": agent.totalUsage.reasoning,
@@ -302,16 +328,16 @@ struct CodexSpeedMain {
             var report: [String: Any] = ["id": session.id, "label": session.displayLabel,
                 "output": usage.output, "input": usage.input,
                 "reasoning": usage.reasoning, "child_count": session.agents.count,
-                "active_child_count": session.agents.filter { $0.isActive(at: Date()) }.count,
-                "include_subagents": includeSubagents,
-                "complete": session.totalsAreComplete, "agents": agents,
+                "active_child_count": session.agents.filter { $0.isActive(at: Date(), includeAutoReview: includeReview) }.count,
+                "include_subagents": includeSubagents, "include_auto_review": includeReview,
+                "complete": counted.allSatisfy { !$0.isLoading && $0.hasCumulativeUsage && $0.error == nil }, "agents": agents,
                 "global_active_chats": global.activeChats, "global_active_agents": global.activeAgents,
                 "global_sampled_agents": global.sampledAgents]
             report["global_sum"] = global.sum as Any? ?? NSNull()
             report["global_average"] = global.average as Any? ?? NSNull()
             report["current_sum"] = current.sum as Any? ?? NSNull()
             if let turn = session.latest {
-                let round = session.round(for: turn, includeSubagents: includeSubagents)
+                let round = session.round(for: turn, includeSubagents: includeSubagents, includeAutoReview: includeReview)
                 report["root_turn_id"] = round.main.id
                 report["round_output"] = round.usage.output
                 report["round_main_output"] = round.mainUsage.output
@@ -324,9 +350,12 @@ struct CodexSpeedMain {
         }
         if arguments.count >= 3, arguments[1] == "--inspect-log" {
             let log = SessionLog(url: URL(fileURLWithPath: arguments[2]))
-            log.refresh(maxBytes: 8 * 1024 * 1024)
+            let includeReview = !arguments.contains("--exclude-auto-review")
+            log.refresh(maxBytes: 8 * 1024 * 1024, requiresModelUsage: !includeReview)
+            for _ in 0..<1000 where log.hasUnreadBytes { log.refresh(requiresModelUsage: !includeReview) }
             let now = Date()
-            let rows: [[String: Any]] = log.turns.map { turn in
+            let turns = log.turnsWithUsageBreakdown.map { $0.filteringAutoReview(includeReview) }.filter(\.hasUsage)
+            let rows: [[String: Any]] = turns.map { turn -> [String: Any] in
                 ["id": turn.id, "model": turn.model, "output_tokens": turn.usage.output,
                  "reasoning_tokens": turn.usage.reasoning, "calls": turn.calls,
                  "duration": turn.duration(at: now), "rate": turn.rate(at: now) as Any? ?? NSNull(),
@@ -371,13 +400,16 @@ struct CodexSpeedMain {
     static func renderPreview(to path: String) {
         let monitor = Monitor()
         let scanner = LogScanner(directory: monitor.folder)
-        let result = scanner.scan(force: true)
+        var result = scanner.scan(force: true, includeAutoReview: monitor.includeAutoReview)
+        for _ in 0..<1000 where result.sessions.contains(where: \.isLoading) {
+            result = scanner.scan(includeAutoReview: monitor.includeAutoReview)
+        }
         monitor.sessions = result.sessions; monitor.message = result.message
         if CommandLine.arguments.contains("--preview-daily") {
             monitor.showDailyHistory = true
             let scanner = DailyStatisticsScanner(directory: monitor.folder)
-            var history = scanner.scan(force: true)
-            for _ in 0..<1000 where history.isLoading { history = scanner.scan() }
+            var history = scanner.scan(includeAutoReview: monitor.includeAutoReview, force: true)
+            for _ in 0..<1000 where history.isLoading { history = scanner.scan(includeAutoReview: monitor.includeAutoReview) }
             monitor.dailyResult = history
         }
         let content = Dashboard(monitor: monitor, onPin: {})

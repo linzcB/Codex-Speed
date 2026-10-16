@@ -17,6 +17,8 @@ swift test
 
 The build script creates a universal Apple Silicon / Intel app. Use `./scripts/package-release.sh` to also create a ZIP and a matching `SHA256SUMS.txt` under `dist/release/`.
 
+For scanning or UI performance changes, use `./scripts/benchmark.sh` and read [performance notes](docs/PERFORMANCE.md). Measure idle and visible-panel behavior separately, and use generated logs.
+
 ## Where things live
 
 | Path | Purpose |

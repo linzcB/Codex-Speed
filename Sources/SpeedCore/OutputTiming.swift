@@ -10,11 +10,13 @@ public struct OutputSample: Sendable {
     public let start: Date
     public let end: Date
     public let seconds: TimeInterval
+    public var firstVisibleOutputAt: Date? = nil
 }
 
 struct PendingOutput: Sendable {
     var start: Date?
     var end: Date?
+    var firstVisibleOutputAt: Date?
 }
 
 extension Turn {
@@ -44,7 +46,7 @@ extension Turn {
         let seconds = ended.timeIntervalSince(began) - toolSeconds(from: began, through: ended)
         guard seconds >= 0.1 else { return }
         outputSamples.append(OutputSample(responseID: responseID, tokens: tokens,
-            start: began, end: ended, seconds: seconds))
+            start: began, end: ended, seconds: seconds, firstVisibleOutputAt: pendingOutput.firstVisibleOutputAt))
     }
 
     public var continuousOutputTokens: Int { outputSamples.reduce(0) { $0 + $1.tokens } }

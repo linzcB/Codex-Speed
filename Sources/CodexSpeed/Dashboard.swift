@@ -63,6 +63,10 @@ struct Dashboard: View {
                     .toggleStyle(.switch)
                     .onChange(of: monitor.includeSubagents) { _ in monitor.aggregationChanged() }
                     .help(L10n.text("控制两行速度和 token 合计是否包含子 agent；明细始终可以查看。"))
+                Toggle(L10n.text("计入 Codex auto review"), isOn: $monitor.includeAutoReview)
+                    .toggleStyle(.switch)
+                    .onChange(of: monitor.includeAutoReview) { _ in monitor.autoReviewChanged() }
+                    .help(L10n.text("关闭后，从实时速度、会话合计、每日统计和导出中排除 Codex auto review；明细保留。"))
                 HStack {
                     Text(L10n.text("当前会话")).foregroundStyle(.secondary)
                     Spacer()
@@ -120,9 +124,9 @@ struct Dashboard: View {
                     detailRow(L10n.text("会话累计输入"), value: "\(tokenText(monitor.totalUsage.input)) tok")
                         .help(L10n.text("累计请求输入，重复发送的上下文也按日志计入；不是上下文窗口大小。"))
                     if monitor.includeSubagents {
-                        detailRow(L10n.text("累计主 / 子输出"), value: "\(tokenText(session.own.totalUsage.output)) / \(tokenText(session.childUsage.output)) tok")
+                        detailRow(L10n.text("累计主 / 子输出"), value: "\(tokenText(monitor.mainUsage.output)) / \(tokenText(monitor.childUsage.output)) tok")
                     }
-                    detailRow(L10n.text("活动子 agent"), value: L10n.text("%@ 个", session.agents.filter { $0.isActive(at: monitor.now) }.count))
+                    detailRow(L10n.text("活动子 agent"), value: L10n.text("%@ 个", monitor.activeSubagentCount))
                         .help(L10n.text("最新一轮尚未结束，且最近 5 分钟有日志更新；包括工具等待中的子 agent。"))
                     if !monitor.totalsAreComplete {
                         Text(monitor.isLoading ? L10n.text("正在读取其余日志，合计会继续补全…") : L10n.text("部分记录缺少累计用量，当前合计可能不完整。"))
@@ -130,9 +134,16 @@ struct Dashboard: View {
                     }
                     if !session.agents.isEmpty {
                         DisclosureGroup(L10n.text("子 agent 明细")) {
+                            Text(L10n.text("明细显示原始记录；排除项不参与合计。"))
+                                .foregroundStyle(.secondary)
                             ForEach(session.agents) { agent in
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(agent.displayLabel).lineLimit(2)
+                                    if !monitor.includeAutoReview && agent.isAutoReview {
+                                        Text(L10n.text("auto review · 已从合计排除")).foregroundStyle(.secondary)
+                                    } else if !monitor.includeAutoReview && agent.autoReviewUsage.total > 0 {
+                                        Text(L10n.text("已排除历史 auto review 用量")).foregroundStyle(.secondary)
+                                    }
                                     Text("\(agent.isLoading ? L10n.text("读取中") : agent.isActive(at: monitor.now) ? L10n.text("本轮速度") : L10n.text("最近速度")) \(rateText(monitor.agentRate(agent))) tok/s")
                                         .monospacedDigit().foregroundStyle(accent)
                                     Text(L10n.text("累计输出 %@ tok · 输入 %@ tok", tokenText(agent.totalUsage.output), tokenText(agent.totalUsage.input)))
@@ -168,9 +179,12 @@ struct Dashboard: View {
                         .frame(maxWidth: 224, alignment: .trailing)
                         .help(monitor.session?.displayLabel ?? L10n.text("等待会话"))
                 }
-                detailRow(L10n.text("主 agent 模型"), value: L10n.modelName(monitor.turn?.model ?? monitor.session?.model ?? "—"))
+                detailRow(L10n.text("主 agent 模型"), value: L10n.modelName(monitor.session?.model ?? "—"))
                 detailRow(L10n.text("主 agent 模式（设置）"), value: monitor.session?.own.serviceTier.displayName ?? "—")
                     .help(L10n.text("读取该 agent 最新的 service_tier 设置，priority / fast 表示 Fast；并非服务端实际计费档位确认。缺少记录时显示未知模式。"))
+                if !monitor.includeAutoReview && monitor.session?.own.isAutoReview == true {
+                    Text(L10n.text("auto review · 已从合计排除")).foregroundStyle(.secondary)
+                } else {
                 detailRow(L10n.text("首字延迟（估算）"), value: monitor.firstVisibleDelayText)
                     .help(L10n.text("本轮开始到首段可见回答的日志起点；不把推理当成可见文字。日志写入后更新，起点未精确到首个字符。"))
                 if let delay = monitor.turn?.timeToFirstToken {
@@ -193,10 +207,13 @@ struct Dashboard: View {
                         L10n.text("%@ tok / %@秒", tokenText($0.continuousOutputTokens), String(format: "%.1f", $0.continuousOutputSeconds))
                     } ?? "—")
                 }
+                }
             }.font(.system(size: 11))
 
             if let session = monitor.session {
-                let recent = Array(session.turns.filter { $0.end != nil && $0.hasUsage }.suffix(3).reversed())
+                let recent = Array(session.turns.filter {
+                    $0.end != nil && session.round(for: $0, includeSubagents: monitor.includeSubagents, includeAutoReview: monitor.includeAutoReview).calls > 0
+                }.suffix(3).reversed())
                 if !recent.isEmpty {
                     Divider()
                     VStack(alignment: .leading, spacing: 8) {
@@ -205,7 +222,7 @@ struct Dashboard: View {
                             HStack {
                                 Text(turn.end ?? turn.start, style: .time).foregroundStyle(.secondary)
                                 Spacer()
-                                Text("\(tokenText(session.round(for: turn, includeSubagents: monitor.includeSubagents).usage.output)) tok").monospacedDigit()
+                                Text("\(tokenText(session.round(for: turn, includeSubagents: monitor.includeSubagents, includeAutoReview: monitor.includeAutoReview).usage.output)) tok").monospacedDigit()
                             }.font(.system(size: 11))
                         }
                     }
