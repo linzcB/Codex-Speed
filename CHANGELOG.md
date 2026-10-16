@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.4 — 2026-10-16
+
+- Show language choices directly in the More menu, avoiding the hover transition into a disappearing submenu.
+- Keep the selected language checked, with immediate updates and persistence.
+- Keep native menu tracking independent of live statistics so refreshes cannot rebuild an open menu.
+- Treat menu clicks and Escape as menu interactions, and preserve a visible panel when the app is reopened.
+
 ## 1.1.3 — 2026-10-16
 
 - Apply the auto review switch to both live speed rows, active agent counts, current-round and session totals, daily history, and CSV exports.

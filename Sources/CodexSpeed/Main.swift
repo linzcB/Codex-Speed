@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let readout = MenuReadout(frame: NSRect(x: 0, y: 0, width: 104, height: 25))
     var panel: NSPanel?
     var localClickMonitor: Any?
+    private var trackingMenus = Set<ObjectIdentifier>()
     private var lastReadoutDescription: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -52,6 +53,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         updateReadout()
         localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
             guard let self else { return event }
+            // Menu items live in separate windows. Let native tracking handle
+            // their clicks and Escape before applying outside-click dismissal.
+            guard self.trackingMenus.isEmpty else { return event }
             if event.type == .keyDown {
                 if event.keyCode == 53, self.dropdown?.isVisible == true { self.closeDropdown(); return nil }
                 return event
@@ -62,6 +66,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             return event
         }
+        NotificationCenter.default.addObserver(self, selector: #selector(menuBeganTracking(_:)),
+            name: NSMenu.didBeginTrackingNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(menuEndedTracking(_:)),
+            name: NSMenu.didEndTrackingNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(localeChanged),
@@ -175,9 +183,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         monitor.setDetailsVisible(dropdown?.isVisible == true)
     }
     func windowDidChangeScreen(_ notification: Notification) { constrainPanel() }
-    func applicationDidResignActive(_ notification: Notification) { closeDropdown() }
+    func applicationDidResignActive(_ notification: Notification) {
+        if trackingMenus.isEmpty { closeDropdown() }
+    }
+    @objc private func menuBeganTracking(_ notification: Notification) {
+        if let menu = notification.object as? NSMenu { trackingMenus.insert(ObjectIdentifier(menu)) }
+    }
+    @objc private func menuEndedTracking(_ notification: Notification) {
+        if let menu = notification.object as? NSMenu { trackingMenus.remove(ObjectIdentifier(menu)) }
+        if trackingMenus.isEmpty && !NSApp.isActive { closeDropdown() }
+    }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        showDetails(); return true
+        // The status-bar window can count as visible even with no detail panel.
+        if dropdown?.isVisible != true && panel?.isVisible != true { showDetails() }
+        return true
     }
     private func closeDropdown() {
         // Release the hosting view as well as hiding its window. A retained,

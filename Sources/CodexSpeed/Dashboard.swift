@@ -25,26 +25,7 @@ struct Dashboard: View {
                     Image(systemName: monitor.pinned ? "pin.fill" : "pin")
                         .font(.system(size: 13)).frame(width: 27, height: 27)
                 }.buttonStyle(.plain).help(monitor.pinned ? L10n.text("收起悬浮侧栏") : L10n.text("固定为悬浮侧栏"))
-                Menu {
-                    Picker(L10n.text("语言"), selection: $monitor.language) {
-                        Text(L10n.text("跟随系统")).tag(AppLanguage.system)
-                        Text("简体中文").tag(AppLanguage.simplifiedChinese)
-                        Text("English").tag(AppLanguage.english)
-                    }
-                    Divider()
-                    Button(L10n.text("选择日志文件夹…"), action: monitor.chooseFolder)
-                    Button(L10n.text("在 Finder 中查看日志")) { NSWorkspace.shared.open(monitor.folder) }
-                    Button(L10n.text("导出最近记录…"), action: monitor.exportCSV).disabled(monitor.session == nil)
-                    Button(L10n.text("重新扫描")) {
-                        monitor.refresh(force: true)
-                        if monitor.showDailyHistory { monitor.refreshDaily(force: true) }
-                    }
-                    Button(L10n.text("为什么看不到云端会话…"), action: monitor.explainCloudSessions)
-                    Divider()
-                    Button(L10n.text("退出 Codex Speed")) { NSApp.terminate(nil) }
-                } label: {
-                    Image(systemName: "ellipsis").frame(width: 20, height: 25)
-                }.menuStyle(.borderlessButton).fixedSize()
+                DashboardMenu(monitor: monitor).frame(width: 28, height: 25)
             }
 
             Picker(L10n.text("查看内容"), selection: $monitor.showDailyHistory) {

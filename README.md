@@ -53,7 +53,7 @@ Release builds are ad hoc signed and are **not notarized by Apple**. If macOS bl
 - **Pin the panel:** click the pin button to keep a floating sidebar open.
 - **Include agents:** toggle **Include subagents**. Both menu bar rows, token totals, and daily history use this choice.
 - **Exclude auto review:** leave **Include Codex auto review** off (the default) to exclude it from both live speed rows, active counts, session totals, daily history, and CSV exports. The same switch appears in both views; original agent details remain available.
-- **Change language:** open **… → Language → Follow system / 简体中文 / English**. The choice takes effect immediately and is remembered.
+- **Change language:** open **…** and click **Follow system**, **简体中文**, or **English** directly. The choice takes effect immediately and is remembered.
 - **Choose logs or export:** both options are in the **…** menu. Logs default to `~/.codex/sessions`, or `sessions` under `CODEX_HOME`.
 
 ## Understand the numbers
