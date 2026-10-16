@@ -1,0 +1,44 @@
+name: Build and tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: Test and build universal macOS app
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test
+        run: swift test
+      - name: Build and package
+        run: ./scripts/package-release.sh "$PWD/build-artifacts"
+      - name: Verify package
+        working-directory: build-artifacts
+        run: |
+          shasum -a 256 -c SHA256SUMS.txt
+          codesign --verify --deep --strict "Codex Speed.app"
+          lipo "Codex Speed.app/Contents/MacOS/CodexSpeed" -verify_arch arm64 x86_64
+      - name: Upload build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Codex-Speed-macos
+          path: |
+            build-artifacts/Codex-Speed-*.zip
+            build-artifacts/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: FAQ / 常见问题
+    url: https://github.com/linzcB/Codex-Speed/blob/main/docs/FAQ.md
+    about: Installation, cloud sessions, timing, costs, and privacy.
+  - name: Security / 安全问题
+    url: https://github.com/linzcB/Codex-Speed/blob/main/SECURITY.md
+    about: How to report a concern without sharing private logs.

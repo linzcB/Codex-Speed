@@ -1,0 +1,47 @@
+name: Bug report / 问题反馈
+description: Report a UI, usage, timing, or installation problem.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Use generated examples. Do not attach raw conversations, credentials, or private workspace paths. / 请使用模拟示例，不要上传真实聊天、凭据或私人路径。
+  - type: input
+    id: version
+    attributes:
+      label: App version / 应用版本
+      placeholder: "1.1.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version / 系统版本
+    validations:
+      required: true
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Mac architecture / 芯片
+      options:
+        - Apple Silicon
+        - Intel
+        - Unknown / 不确定
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened? / 实际问题
+      description: Include steps to reproduce and the behavior you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Measurement context / 统计范围
+      description: For mismatches, include the selected metric, date, time zone, subagent toggle, and whether logs are local or cloud-only.
+  - type: textarea
+    id: example
+    attributes:
+      label: Demo screenshot or generated example / 模拟截图或示例
+      description: Remove private titles, paths, and account information before sharing.

@@ -17,6 +17,11 @@ xcrun lipo -create "$BUILD_DIR/CodexSpeed-arm64" "$BUILD_DIR/CodexSpeed-x86_64" 
 cp "$ROOT/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 cp -R "$ROOT/Sources/SpeedCore/Resources/en.lproj" "$ROOT/Sources/SpeedCore/Resources/zh-Hans.lproj" "$APP/Contents/Resources/"
+if [ -f "$ROOT/LICENSE" ]; then
+    cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
+else
+    rm -f "$APP/Contents/Resources/LICENSE"
+fi
 codesign --force --sign - --options runtime "$APP"
 codesign --verify --deep --strict "$APP"
 printf 'Built: %s\n' "$APP"
