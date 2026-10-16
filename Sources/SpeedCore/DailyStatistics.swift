@@ -201,7 +201,7 @@ public final class DailyStatisticsScanner: @unchecked Sendable {
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else {
             return DailyScanResult(days: [], isLoading: false, filesRead: 0, totalFiles: 0,
-                message: "找不到 sessions 文件夹，无法读取每日历史。", timeZoneIdentifier: timeZone.identifier)
+                message: L10n.text("找不到 sessions 文件夹，无法读取每日历史。"), timeZoneIdentifier: timeZone.identifier)
         }
         let now = Date()
         if force || now.timeIntervalSince(lastDiscovery) >= 10 {
@@ -279,10 +279,10 @@ public final class DailyStatisticsScanner: @unchecked Sendable {
             return DailyUsage(day: day, totals: totals, models: models)
         }
         var notes: [String] = []
-        if warning { notes.append("部分日志缺失、无法读取或记录过大，历史统计可能不完整。") }
-        if unfinishedLine { notes.append("部分日志末尾记录尚未写完，暂未计入；写入完成后会自动补全。") }
-        if omitted > 0 { notes.append("有 \(omitted) 条旧用量或缺少时间的记录无法可靠归入日期，未计入。") }
-        if legacy > 0 { notes.append("已计入 \(legacy) 次可验证的旧版请求；它们没有连续输出计时，不参与均速。") }
+        if warning { notes.append(L10n.text("部分日志缺失、无法读取或记录过大，历史统计可能不完整。")) }
+        if unfinishedLine { notes.append(L10n.text("部分日志末尾记录尚未写完，暂未计入；写入完成后会自动补全。")) }
+        if omitted > 0 { notes.append(L10n.text("有 %@ 条旧用量或缺少时间的记录无法可靠归入日期，未计入。", omitted)) }
+        if legacy > 0 { notes.append(L10n.text("已计入 %@ 次可验证的旧版请求；它们没有连续输出计时，不参与均速。", legacy)) }
         return DailyScanResult(days: days, isLoading: read < files.count, filesRead: read, totalFiles: files.count,
             message: notes.isEmpty ? nil : notes.joined(separator: "\n"), timeZoneIdentifier: timeZone.identifier)
     }

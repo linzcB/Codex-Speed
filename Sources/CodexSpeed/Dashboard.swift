@@ -18,32 +18,38 @@ struct Dashboard: View {
                     .background(accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 11))
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Codex Speed").font(.system(size: 15, weight: .semibold))
-                    Text("\(monitor.showDailyHistory ? "全部本机历史" : "全部活跃聊天") · \(monitor.scopeText)").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text("\(monitor.showDailyHistory ? L10n.text("全部本机历史") : L10n.text("全部活跃聊天")) · \(monitor.scopeText)").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button(action: onPin) {
                     Image(systemName: monitor.pinned ? "pin.fill" : "pin")
                         .font(.system(size: 13)).frame(width: 27, height: 27)
-                }.buttonStyle(.plain).help(monitor.pinned ? "收起悬浮侧栏" : "固定为悬浮侧栏")
+                }.buttonStyle(.plain).help(monitor.pinned ? L10n.text("收起悬浮侧栏") : L10n.text("固定为悬浮侧栏"))
                 Menu {
-                    Button("选择日志文件夹…", action: monitor.chooseFolder)
-                    Button("在 Finder 中查看日志") { NSWorkspace.shared.open(monitor.folder) }
-                    Button("导出最近记录…", action: monitor.exportCSV).disabled(monitor.session == nil)
-                    Button("重新扫描") {
+                    Picker(L10n.text("语言"), selection: $monitor.language) {
+                        Text(L10n.text("跟随系统")).tag(AppLanguage.system)
+                        Text("简体中文").tag(AppLanguage.simplifiedChinese)
+                        Text("English").tag(AppLanguage.english)
+                    }
+                    Divider()
+                    Button(L10n.text("选择日志文件夹…"), action: monitor.chooseFolder)
+                    Button(L10n.text("在 Finder 中查看日志")) { NSWorkspace.shared.open(monitor.folder) }
+                    Button(L10n.text("导出最近记录…"), action: monitor.exportCSV).disabled(monitor.session == nil)
+                    Button(L10n.text("重新扫描")) {
                         monitor.refresh(force: true)
                         if monitor.showDailyHistory { monitor.refreshDaily(force: true) }
                     }
-                    Button("为什么看不到云端会话…", action: monitor.explainCloudSessions)
+                    Button(L10n.text("为什么看不到云端会话…"), action: monitor.explainCloudSessions)
                     Divider()
-                    Button("退出 Codex Speed") { NSApp.terminate(nil) }
+                    Button(L10n.text("退出 Codex Speed")) { NSApp.terminate(nil) }
                 } label: {
                     Image(systemName: "ellipsis").frame(width: 20, height: 25)
                 }.menuStyle(.borderlessButton).fixedSize()
             }
 
-            Picker("查看内容", selection: $monitor.showDailyHistory) {
-                Text("实时速度").tag(false)
-                Text("每日历史").tag(true)
+            Picker(L10n.text("查看内容"), selection: $monitor.showDailyHistory) {
+                Text(L10n.text("实时速度")).tag(false)
+                Text(L10n.text("每日历史")).tag(true)
             }.pickerStyle(.segmented)
                 .onChange(of: monitor.showDailyHistory) { showing in
                     if showing { monitor.refreshDaily(force: true) }
@@ -53,17 +59,17 @@ struct Dashboard: View {
                 DailyHistoryView(monitor: monitor, accent: accent)
             } else {
             VStack(spacing: 10) {
-                Toggle("计入子 agent", isOn: $monitor.includeSubagents)
+                Toggle(L10n.text("计入子 agent"), isOn: $monitor.includeSubagents)
                     .toggleStyle(.switch)
                     .onChange(of: monitor.includeSubagents) { _ in monitor.aggregationChanged() }
-                    .help("控制两行速度和 token 合计是否包含子 agent；明细始终可以查看。")
+                    .help(L10n.text("控制两行速度和 token 合计是否包含子 agent；明细始终可以查看。"))
                 HStack {
-                    Text("当前会话").foregroundStyle(.secondary)
+                    Text(L10n.text("当前会话")).foregroundStyle(.secondary)
                     Spacer()
-                    Picker("当前会话", selection: $monitor.selectedID) {
-                        Text("最近活动（自动）").tag("automatic")
+                    Picker(L10n.text("当前会话"), selection: $monitor.selectedID) {
+                        Text(L10n.text("最近活动（自动）")).tag("automatic")
                         ForEach(monitor.sessions) { session in
-                            Text(session.label).tag(session.id)
+                            Text(session.displayLabel).tag(session.id)
                         }
                     }.labelsHidden().frame(maxWidth: 224)
                     .onChange(of: monitor.selectedID) { _ in monitor.selectionChanged() }
@@ -71,7 +77,7 @@ struct Dashboard: View {
             }.font(.system(size: 11))
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("全局速度合计").font(.system(size: 12, weight: .semibold))
+                Text(L10n.text("全局速度合计")).font(.system(size: 12, weight: .semibold))
                 HStack {
                     Label(monitor.status, systemImage: monitor.isLive ? "circle.fill" : "circle")
                         .font(.system(size: 11, weight: .medium))
@@ -86,9 +92,9 @@ struct Dashboard: View {
                     Text("tok/s").font(.system(size: 15)).foregroundStyle(.secondary)
                     Spacer()
                 }.accessibilityElement(children: .combine)
-                Text("当前会话 \(rateText(monitor.currentSpeed.sum)) tok/s")
+                Text(L10n.text("当前会话 %@ tok/s", rateText(monitor.currentSpeed.sum)))
                     .font(.system(size: 12, weight: .medium)).monospacedDigit()
-                Text("\(monitor.global.activeChats) 个活跃聊天 · \(monitor.global.sampledAgents)/\(monitor.global.activeAgents) 个 agent 会话有速度样本")
+                Text(L10n.text("%@ 个活跃聊天 · %@/%@ 个 agent 会话有速度样本", monitor.global.activeChats, monitor.global.sampledAgents, monitor.global.activeAgents))
                     .font(.system(size: 10)).foregroundStyle(.secondary)
                 Text(monitor.sampleAge).font(.system(size: 10)).foregroundStyle(.secondary)
                 Sparkline(points: monitor.history, color: accent).frame(height: 52)
@@ -96,44 +102,44 @@ struct Dashboard: View {
             .padding(16)
             .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 15))
 
-            Text("\(monitor.session?.label ?? "所选会话") · \(monitor.scopeText)")
+            Text("\(monitor.session?.displayLabel ?? L10n.text("所选会话")) · \(monitor.scopeText)")
                 .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
             HStack(spacing: 10) {
-                metricCard("本轮合计输出", value: tokenText(monitor.round?.usage.output ?? 0), suffix: "tok")
+                metricCard(L10n.text("本轮合计输出"), value: tokenText(monitor.round?.usage.output ?? 0), suffix: "tok")
                 let output = monitor.round?.usage.output ?? 0
                 let reasoning = monitor.round?.usage.reasoning ?? 0
-                metricCard("其中推理", value: tokenText(reasoning), suffix: "tok")
-                    .help(output > 0 ? String(format: "推理占输出 %.1f%%", Double(reasoning) / Double(output) * 100) : "等待统计")
+                metricCard(L10n.text("其中推理"), value: tokenText(reasoning), suffix: "tok")
+                    .help(output > 0 ? String(format: L10n.text("推理占输出 %.1f%%"), Double(reasoning) / Double(output) * 100) : L10n.text("等待统计"))
             }
             if let session = monitor.session {
                 VStack(alignment: .leading, spacing: 8) {
                     if monitor.includeSubagents {
-                        detailRow("本轮主 / 子输出", value: "\(tokenText(monitor.round?.mainUsage.output ?? 0)) / \(tokenText(monitor.round?.childUsage.output ?? 0)) tok")
+                        detailRow(L10n.text("本轮主 / 子输出"), value: "\(tokenText(monitor.round?.mainUsage.output ?? 0)) / \(tokenText(monitor.round?.childUsage.output ?? 0)) tok")
                     }
-                    detailRow("会话累计输出", value: "\(tokenText(monitor.totalUsage.output)) tok")
-                    detailRow("会话累计输入", value: "\(tokenText(monitor.totalUsage.input)) tok")
-                        .help("累计请求输入，重复发送的上下文也按日志计入；不是上下文窗口大小。")
+                    detailRow(L10n.text("会话累计输出"), value: "\(tokenText(monitor.totalUsage.output)) tok")
+                    detailRow(L10n.text("会话累计输入"), value: "\(tokenText(monitor.totalUsage.input)) tok")
+                        .help(L10n.text("累计请求输入，重复发送的上下文也按日志计入；不是上下文窗口大小。"))
                     if monitor.includeSubagents {
-                        detailRow("累计主 / 子输出", value: "\(tokenText(session.own.totalUsage.output)) / \(tokenText(session.childUsage.output)) tok")
+                        detailRow(L10n.text("累计主 / 子输出"), value: "\(tokenText(session.own.totalUsage.output)) / \(tokenText(session.childUsage.output)) tok")
                     }
-                    detailRow("活动子 agent", value: "\(session.agents.filter { $0.isActive(at: monitor.now) }.count) 个")
-                        .help("最新一轮尚未结束，且最近 5 分钟有日志更新；包括工具等待中的子 agent。")
+                    detailRow(L10n.text("活动子 agent"), value: L10n.text("%@ 个", session.agents.filter { $0.isActive(at: monitor.now) }.count))
+                        .help(L10n.text("最新一轮尚未结束，且最近 5 分钟有日志更新；包括工具等待中的子 agent。"))
                     if !monitor.totalsAreComplete {
-                        Text(monitor.isLoading ? "正在读取其余日志，合计会继续补全…" : "部分记录缺少累计用量，当前合计可能不完整。")
+                        Text(monitor.isLoading ? L10n.text("正在读取其余日志，合计会继续补全…") : L10n.text("部分记录缺少累计用量，当前合计可能不完整。"))
                             .foregroundStyle(.orange)
                     }
                     if !session.agents.isEmpty {
-                        DisclosureGroup("子 agent 明细") {
+                        DisclosureGroup(L10n.text("子 agent 明细")) {
                             ForEach(session.agents) { agent in
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(agent.label).lineLimit(2)
-                                    Text("\(agent.isLoading ? "读取中" : agent.isActive(at: monitor.now) ? "本轮速度" : "最近速度") \(rateText(monitor.agentRate(agent))) tok/s")
+                                    Text(agent.displayLabel).lineLimit(2)
+                                    Text("\(agent.isLoading ? L10n.text("读取中") : agent.isActive(at: monitor.now) ? L10n.text("本轮速度") : L10n.text("最近速度")) \(rateText(monitor.agentRate(agent))) tok/s")
                                         .monospacedDigit().foregroundStyle(accent)
-                                    Text("累计输出 \(tokenText(agent.totalUsage.output)) tok · 输入 \(tokenText(agent.totalUsage.input)) tok")
+                                    Text(L10n.text("累计输出 %@ tok · 输入 %@ tok", tokenText(agent.totalUsage.output), tokenText(agent.totalUsage.input)))
                                         .foregroundStyle(.secondary)
-                                    Text("\(agent.model) · \(agent.isActive(at: monitor.now) ? "运行中" : "暂无活动")")
+                                    Text("\(L10n.modelName(agent.model)) · \(agent.isActive(at: monitor.now) ? L10n.text("运行中") : L10n.text("暂无活动"))")
                                         .foregroundStyle(.secondary)
-                                    Text("\(agent.serviceTier.displayName) · 日志设置")
+                                    Text(L10n.text("%@ · 日志设置", agent.serviceTier.displayName))
                                         .foregroundStyle(.secondary)
                                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
                             }
@@ -144,47 +150,47 @@ struct Dashboard: View {
 
             VStack(alignment: .leading, spacing: 9) {
                 HStack {
-                    Text("统计口径").foregroundStyle(.secondary)
+                    Text(L10n.text("统计口径")).foregroundStyle(.secondary)
                     Spacer()
-                    Picker("统计口径", selection: $monitor.metric) {
-                        Text("连续输出（估算）").tag(SpeedMetric.continuousOutput)
-                        Text("扣工具（估算）").tag(SpeedMetric.excludingTools)
-                        Text("整轮均速").tag(SpeedMetric.wholeTurn)
+                    Picker(L10n.text("统计口径"), selection: $monitor.metric) {
+                        Text(L10n.text("连续输出（估算）")).tag(SpeedMetric.continuousOutput)
+                        Text(L10n.text("扣工具（估算）")).tag(SpeedMetric.excludingTools)
+                        Text(L10n.text("整轮均速")).tag(SpeedMetric.wholeTurn)
                     }.labelsHidden().frame(maxWidth: 224)
                         .onChange(of: monitor.metric) { _ in monitor.metricChanged() }
                 }
                 HStack(alignment: .top) {
-                    Text("当前会话").foregroundStyle(.secondary)
+                    Text(L10n.text("当前会话")).foregroundStyle(.secondary)
                     Spacer()
-                    Text(monitor.session?.label ?? "—")
+                    Text(monitor.session?.displayLabel ?? "—")
                         .lineLimit(2).truncationMode(.tail)
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: 224, alignment: .trailing)
-                        .help(monitor.session?.label ?? "等待会话")
+                        .help(monitor.session?.displayLabel ?? L10n.text("等待会话"))
                 }
-                detailRow("主 agent 模型", value: monitor.turn?.model ?? monitor.session?.model ?? "—")
-                detailRow("主 agent 模式（设置）", value: monitor.session?.own.serviceTier.displayName ?? "—")
-                    .help("读取该 agent 最新的 service_tier 设置，priority / fast 表示 Fast；并非服务端实际计费档位确认。缺少记录时显示未知模式。")
-                detailRow("首字延迟（估算）", value: monitor.firstVisibleDelayText)
-                    .help("本轮开始到首段可见回答的日志起点；不把推理当成可见文字。日志写入后更新，起点未精确到首个字符。")
+                detailRow(L10n.text("主 agent 模型"), value: L10n.modelName(monitor.turn?.model ?? monitor.session?.model ?? "—"))
+                detailRow(L10n.text("主 agent 模式（设置）"), value: monitor.session?.own.serviceTier.displayName ?? "—")
+                    .help(L10n.text("读取该 agent 最新的 service_tier 设置，priority / fast 表示 Fast；并非服务端实际计费档位确认。缺少记录时显示未知模式。"))
+                detailRow(L10n.text("首字延迟（估算）"), value: monitor.firstVisibleDelayText)
+                    .help(L10n.text("本轮开始到首段可见回答的日志起点；不把推理当成可见文字。日志写入后更新，起点未精确到首个字符。"))
                 if let delay = monitor.turn?.timeToFirstToken {
-                    detailRow("首 token 延迟（日志）", value: String(format: "%.2f秒", delay))
-                        .help("Codex 在整轮结束时记录的 time_to_first_token；可能是推理输出，与首字延迟不同。")
+                    detailRow(L10n.text("首 token 延迟（日志）"), value: String(format: L10n.text("%.2f秒"), delay))
+                        .help(L10n.text("Codex 在整轮结束时记录的 time_to_first_token；可能是推理输出，与首字延迟不同。"))
                 }
-                detailRow("主轮耗时 / 合计调用", value: monitor.turn.map {
-                    "\(durationText($0.duration(at: $0.end ?? (monitor.session?.own.isActive(at: monitor.now) == true ? monitor.now : $0.lastUsageAt ?? monitor.now)))) · \(monitor.round?.calls ?? 0) 次"
+                detailRow(L10n.text("主轮耗时 / 合计调用"), value: monitor.turn.map {
+                    L10n.text("%@ · %@ 次", durationText($0.duration(at: $0.end ?? (monitor.session?.own.isActive(at: monitor.now) == true ? monitor.now : $0.lastUsageAt ?? monitor.now))), monitor.round?.calls ?? 0)
                 } ?? "—")
                 if monitor.metric == .excludingTools {
-                    detailRow("主 agent 扣工具 / 剩余", value: monitor.turn.map {
+                    detailRow(L10n.text("主 agent 扣工具 / 剩余"), value: monitor.turn.map {
                         "\($0.toolSecondsToSample.map(durationText) ?? "—") / \($0.nonToolSecondsToSample.map(durationText) ?? "—")"
                     } ?? "—")
                 }
                 if monitor.metric == .continuousOutput {
-                    detailRow("主 agent 有效 / 总调用", value: monitor.turn.map {
-                        "\($0.continuousOutputCalls) / \($0.calls) 次"
+                    detailRow(L10n.text("主 agent 有效 / 总调用"), value: monitor.turn.map {
+                        L10n.text("%@ / %@ 次", $0.continuousOutputCalls, $0.calls)
                     } ?? "—")
-                    detailRow("主 agent 输出 / 时间", value: monitor.turn.map {
-                        "\(tokenText($0.continuousOutputTokens)) tok / \(String(format: "%.1f", $0.continuousOutputSeconds))秒"
+                    detailRow(L10n.text("主 agent 输出 / 时间"), value: monitor.turn.map {
+                        L10n.text("%@ tok / %@秒", tokenText($0.continuousOutputTokens), String(format: "%.1f", $0.continuousOutputSeconds))
                     } ?? "—")
                 }
             }.font(.system(size: 11))
@@ -194,7 +200,7 @@ struct Dashboard: View {
                 if !recent.isEmpty {
                     Divider()
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("最近完成 · \(monitor.scopeText)输出").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                        Text(L10n.text("最近完成 · %@输出", monitor.scopeText)).font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
                         ForEach(recent) { turn in
                             HStack {
                                 Text(turn.end ?? turn.start, style: .time).foregroundStyle(.secondary)
@@ -213,13 +219,14 @@ struct Dashboard: View {
                 .fixedSize(horizontal: false, vertical: true).lineSpacing(3)
             HStack(spacing: 4) {
                 Image(systemName: "internaldrive")
-                Text("仅本机会话 · 云端未接入")
+                Text(L10n.text("仅本机会话 · 云端未接入"))
                 Spacer()
-                Text("每秒刷新")
+                Text(L10n.text("每秒刷新"))
             }.font(.system(size: 9)).foregroundStyle(.tertiary)
             }
         }
         .padding(20).frame(maxWidth: .infinity, alignment: .topLeading)
+        .environment(\.locale, L10n.locale)
     }
     private func metricCard(_ title: String, value: String, suffix: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -243,6 +250,10 @@ struct Dashboard: View {
 struct Sparkline: View {
     let points: [SpeedPoint]
     let color: Color
+    @Environment(\.locale) private var locale
+    private var localizer: AppLocalizer {
+        AppLocalizer(language: .system, preferredLanguages: [locale.identifier])
+    }
     var body: some View {
         GeometryReader { geometry in
             let values = points.map(\.value)
@@ -266,10 +277,10 @@ struct Sparkline: View {
                         }
                     }.stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 } else {
-                    Text(points.isEmpty ? "等待统计样本" : "等待下一次统计")
+                    Text(points.isEmpty ? localizer.text("等待统计样本") : localizer.text("等待下一次统计"))
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
             }
-        }.accessibilityLabel("每次有效统计更新时记录的所选口径速度")
+        }.accessibilityLabel(localizer.text("每次有效统计更新时记录的所选口径速度"))
     }
 }

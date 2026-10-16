@@ -152,7 +152,7 @@ final class DailyStatisticsTests: XCTestCase {
         let scanner = DailyStatisticsScanner(directory: directory, timeZone: zone)
         let pending = scanner.scan(force: true)
         XCTAssertFalse(pending.isLoading); XCTAssertTrue(pending.days.isEmpty)
-        XCTAssertTrue(pending.message?.contains("尚未写完") == true)
+        XCTAssertTrue(pending.message?.contains(L10n.text("部分日志末尾记录尚未写完，暂未计入；写入完成后会自动补全。")) == true)
         try append(Data([10]), to: url)
         XCTAssertEqual(try finish(scanner).days.first?.totals.inputTokens, 100)
         let replacement = metadata("main") + usage("main", turn: "two", response: "r2", input: 20, output: 2)
@@ -215,7 +215,7 @@ final class DailyStatisticsTests: XCTestCase {
         XCTAssertEqual(result.days.first?.totals.inputTokens, 200)
         XCTAssertEqual(result.days.first?.totals.outputTokens, 20)
         XCTAssertNil(result.days.first?.totals.averageSpeed)
-        XCTAssertTrue(result.message?.contains("未计入") == true)
+        XCTAssertTrue(result.message?.contains(L10n.text("有 %@ 条旧用量或缺少时间的记录无法可靠归入日期，未计入。", "2")) == true)
     }
 
     func testUnattributedInternalAgentExcludedButOwnedReviewAgentIncluded() throws {

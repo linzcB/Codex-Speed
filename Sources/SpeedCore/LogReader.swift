@@ -60,7 +60,8 @@ public struct Turn: Identifiable, Sendable {
 public final class SessionLog {
     public let url: URL
     public var id: String
-    public var label: String
+    public var label: String { didSet { labelIsFallback = false } }
+    public var labelIsFallback = true
     public var model = "未知模型"
     public var originator = "Codex"
     public private(set) var serviceTier: ApiServiceTier = .unknown
@@ -71,6 +72,7 @@ public final class SessionLog {
     public private(set) var sessionID: String?
     public private(set) var agentPath: String?
     public private(set) var agentNickname: String?
+    public private(set) var hasFallbackNickname = false
     public private(set) var hasCumulativeUsage = false
     public private(set) var hasUnreadBytes = false
     public private(set) var hasSkippedHistory = false
@@ -160,7 +162,7 @@ public final class SessionLog {
             feed(data)
             error = nil
         } catch {
-            self.error = "暂时无法读取会话日志：\(error.localizedDescription)"
+            self.error = L10n.text("暂时无法读取会话日志：%@", error.localizedDescription)
         }
     }
 
@@ -170,11 +172,11 @@ public final class SessionLog {
         currentID = nil; threadTotal = Usage(); discardingLine = false
         skippedLargeLines = 0
         id = url.deletingPathExtension().lastPathComponent
-        label = "未命名会话"; cwd = ""; isSubagent = false
+        label = "未命名会话"; labelIsFallback = true; cwd = ""; isSubagent = false
         hasMetadata = false; isAttributedSubagent = false; parentThreadID = nil; sessionID = nil
         readingInheritedHistory = false
         model = "未知模型"; serviceTier = .unknown; tierChanges.removeAll()
-        agentPath = nil; agentNickname = nil; hasCumulativeUsage = false
+        agentPath = nil; agentNickname = nil; hasFallbackNickname = false; hasCumulativeUsage = false
         hasUnreadBytes = false; hasSkippedHistory = false
         dailyStatistics?.reset()
     }
@@ -279,11 +281,13 @@ public final class SessionLog {
             sessionID = payload["session_id"] as? String
             agentPath = payload["agent_path"] as? String ?? spawn["agent_path"] as? String
             agentNickname = payload["agent_nickname"] as? String ?? spawn["agent_nickname"] as? String
+            hasFallbackNickname = false
             // Include any explicitly owned child, including internal review agents:
             // their requests also contribute to the parent chat's token usage.
             isAttributedSubagent = isSubagent && parentThreadID != nil
             if agentNickname == nil, subagent["other"] as? String == "guardian" {
                 agentNickname = "审核助手"
+                hasFallbackNickname = true
             }
             return
         }
@@ -482,6 +486,8 @@ public final class SessionLog {
 public struct SessionSnapshot: Identifiable, Sendable {
     public var id: String
     public var label: String
+    public var labelIsFallback: Bool
+    public var displayLabel: String { labelIsFallback ? L10n.text("未命名会话") : label }
     public var model: String
     public var url: URL
     public var turns: [Turn]
@@ -492,6 +498,7 @@ public struct SessionSnapshot: Identifiable, Sendable {
     public var latest: Turn? { turns.last }
     public init(log: SessionLog) {
         id = log.id; label = log.label; model = log.model; url = log.url
+        labelIsFallback = log.labelIsFallback
         turns = log.turns; modifiedAt = log.modifiedAt; error = log.error
         own = AgentSnapshot(log: log)
     }
@@ -525,7 +532,7 @@ public final class LogScanner: @unchecked Sendable {
         let fm = FileManager.default
         var isDir: ObjCBool = false
         guard fm.fileExists(atPath: directory.path, isDirectory: &isDir), isDir.boolValue else {
-            return ScanResult(sessions: [], message: "找不到 sessions 文件夹，请选择 Codex 日志位置。")
+            return ScanResult(sessions: [], message: L10n.text("找不到 sessions 文件夹，请选择 Codex 日志位置。"))
         }
         if force || now.timeIntervalSince(lastDiscovery) >= 10 {
             let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
@@ -593,7 +600,7 @@ public final class LogScanner: @unchecked Sendable {
             let rootIDs = Set(rootCandidates.compactMap { logs[$0]?.id })
             candidates = rootCandidates + owners.keys.filter { rootIDs.contains(owners[$0]!) }
             lastDiscovery = now
-            discoveryMessage = discoveryFailed ? "部分日志无法读取，合计可能不完整。" : nil
+            discoveryMessage = discoveryFailed ? L10n.text("部分日志无法读取，合计可能不完整。") : nil
         }
         for url in candidates { logs[url]?.refresh() }
         let names = titles.names(for: rootCandidates.compactMap { logs[$0]?.id })
@@ -601,13 +608,14 @@ public final class LogScanner: @unchecked Sendable {
         for url in rootCandidates {
             guard let log = logs[url] else { continue }
             log.label = names[log.id] ?? "未命名会话"
+            log.labelIsFallback = names[log.id] == nil
             var snapshot = SessionSnapshot(log: log)
             snapshot.agents = candidates.compactMap { childURL -> AgentSnapshot? in
                 guard owners[childURL] == log.id, let child = logs[childURL] else { return nil }
                 return AgentSnapshot(log: child)
             }.sorted { $0.modifiedAt > $1.modifiedAt }
             snapshot.modifiedAt = max(snapshot.modifiedAt, snapshot.agents.map(\.modifiedAt).max() ?? .distantPast)
-            if snapshot.agents.contains(where: { $0.error != nil }) { snapshot.error = "部分子 agent 日志无法读取，合计可能不完整。" }
+            if snapshot.agents.contains(where: { $0.error != nil }) { snapshot.error = L10n.text("部分子 agent 日志无法读取，合计可能不完整。") }
             snapshots.append(snapshot)
         }
         // Preserve the compact picker when recent files have no actual running
@@ -616,6 +624,6 @@ public final class LogScanner: @unchecked Sendable {
         let recentIDs = Set(snapshots.prefix(8).map(\.id))
         snapshots = snapshots.filter { recentIDs.contains($0.id) || $0.id == preferredID || $0.isActive(at: now) }
         return ScanResult(sessions: snapshots,
-            message: discoveryMessage ?? (snapshots.isEmpty ? "尚未发现会话。发送一条 Codex 消息后会自动出现。" : nil))
+            message: discoveryMessage ?? (snapshots.isEmpty ? L10n.text("尚未发现会话。发送一条 Codex 消息后会自动出现。") : nil))
     }
 }

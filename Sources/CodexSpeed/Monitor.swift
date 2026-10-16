@@ -18,6 +18,13 @@ final class Monitor: ObservableObject {
     @Published var showDailyHistory = false
     @Published var dailySelectedDay = "today"
     @Published var dailyResult: DailyScanResult?
+    @Published var language = L10n.preference {
+        didSet {
+            guard language != oldValue else { return }
+            L10n.preference = language
+            localizationChanged()
+        }
+    }
     private let dailyWorker = DispatchQueue(label: "local.codexspeed.daily-reader", qos: .utility)
     private var dailyScanner: DailyStatisticsScanner
     private var dailyBusy = false
@@ -68,7 +75,7 @@ final class Monitor: ObservableObject {
     }
     var totalsAreComplete: Bool { countedAgents.allSatisfy { !$0.isLoading && $0.hasCumulativeUsage && $0.error == nil } }
     var isLoading: Bool { countedAgents.contains { $0.isLoading } }
-    var scopeText: String { includeSubagents ? "含子 agent" : "仅主 agent" }
+    var scopeText: String { includeSubagents ? L10n.text("含子 agent") : L10n.text("仅主 agent") }
     var global: GlobalSpeed { GlobalSpeed(sessions: sessions, at: now, metric: metric, includeSubagents: includeSubagents) }
     var currentSpeed: GlobalSpeed { GlobalSpeed(sessions: session.map { [$0] } ?? [], at: now, metric: metric, includeSubagents: includeSubagents) }
     func agentRate(_ agent: AgentSnapshot) -> Double? {
@@ -80,39 +87,39 @@ final class Monitor: ObservableObject {
     var rate: Double? { global.sum }
     var metricTitle: String {
         switch metric {
-        case .continuousOutput: return "连续输出（估算）"
-        case .excludingTools: return "扣工具均速（估算）"
-        case .wholeTurn: return "本轮均速"
+        case .continuousOutput: return L10n.text("连续输出（估算）")
+        case .excludingTools: return L10n.text("扣工具均速（估算）")
+        case .wholeTurn: return L10n.text("本轮均速")
         }
     }
     var metricExplanation: String {
-        let globalNote = "菜单栏上行是所有活动聊天的速度合计，下行是当前选中会话的速度。两行均为\(scopeText)；完成或空闲 agent 不参与当前速度。启用子 agent 时，其历史 token 仍计入累计。\n"
+        let globalNote = L10n.text("菜单栏上行是所有活动聊天的速度合计，下行是当前选中会话的速度。两行均为%@；完成或空闲 agent 不参与当前速度。启用子 agent 时，其历史 token 仍计入累计。\n", scopeText)
         if metric == .continuousOutput {
             if global.sampledAgents == 0 {
-                return globalNote + "等待有完整输出起止记录的活跃调用；缺少样本时显示 —。"
+                return globalNote + L10n.text("等待有完整输出起止记录的活跃调用；缺少样本时显示 —。")
             }
-            return globalNote + "连续输出按每个 agent 的有效输出阶段估算，排除段前等待与段间工具时间。含推理及工具参数；日志起点未精确到首个 token。"
+            return globalNote + L10n.text("连续输出按每个 agent 的有效输出阶段估算，排除段前等待与段间工具时间。含推理及工具参数；日志起点未精确到首个 token。")
         }
         if metric == .wholeTurn {
-            return globalNote + "每个 agent 的整轮均速 = 已统计输出 ÷ 本轮耗时，含工具与等待时间。"
+            return globalNote + L10n.text("每个 agent 的整轮均速 = 已统计输出 ÷ 本轮耗时，含工具与等待时间。")
         }
-        return globalNote + "扣工具模式仍含网络、输入处理等开销，无法表示纯模型解码速度。"
+        return globalNote + L10n.text("扣工具模式仍含网络、输入处理等开销，无法表示纯模型解码速度。")
     }
     var status: String {
-        if message != nil, session == nil { return "等待日志" }
-        if !isLive { return "暂无活动" }
-        return global.sampledAgents > 0 ? "全局运行中" : "等待首次统计"
+        if message != nil, session == nil { return L10n.text("等待日志") }
+        if !isLive { return L10n.text("暂无活动") }
+        return global.sampledAgents > 0 ? L10n.text("全局运行中") : L10n.text("等待首次统计")
     }
     var sampleAge: String {
         let sampleAt = global.sampleAt
-        guard let time = sampleAt else { return "等待可计算的输出记录" }
+        guard let time = sampleAt else { return L10n.text("等待可计算的输出记录") }
         let seconds = max(0, Int(now.timeIntervalSince(time)))
-        return seconds < 2 ? "刚刚更新" : "统计更新于 \(durationText(Double(seconds)))前"
+        return seconds < 2 ? L10n.text("刚刚更新") : L10n.text("统计更新于 %@前", durationText(Double(seconds)))
     }
     var firstVisibleDelayText: String {
-        if let delay = turn?.firstVisibleOutputDelay { return String(format: "≈ %.2f秒", delay) }
-        guard let turn, turn.hasKnownStart, turn.hasCompleteTimeline else { return "无完整记录" }
-        return session?.own.isActive(at: now) == true ? "等待首段文字记录" : "未记录可见文字"
+        if let delay = turn?.firstVisibleOutputDelay { return String(format: L10n.text("≈ %.2f秒"), delay) }
+        guard let turn, turn.hasKnownStart, turn.hasCompleteTimeline else { return L10n.text("无完整记录") }
+        return session?.own.isActive(at: now) == true ? L10n.text("等待首段文字记录") : L10n.text("未记录可见文字")
     }
     func start() {
         refresh(force: true)
@@ -120,6 +127,12 @@ final class Monitor: ObservableObject {
             MainActor.assumeIsolated { self?.tick() }
         }
         if let timer { RunLoop.main.add(timer, forMode: .common) }
+    }
+    func localizationChanged() {
+        objectWillChange.send()
+        didUpdate?()
+        refresh(force: true)
+        if showDailyHistory { refreshDaily() }
     }
     private func tick() {
         now = Date()
@@ -147,12 +160,14 @@ final class Monitor: ObservableObject {
         let scanner = dailyScanner
         let currentGeneration = generation
         let include = includeSubagents
+        let languageCode = L10n.current.languageCode
         dailyWorker.async { [weak self] in
             let result = scanner.scan(includeSubagents: include, force: force)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.dailyBusy = false
-                guard self.generation == currentGeneration, self.includeSubagents == include else {
+                guard self.generation == currentGeneration, self.includeSubagents == include,
+                      L10n.current.languageCode == languageCode else {
                     if self.showDailyHistory { self.refreshDaily(force: true) }; return
                 }
                 self.dailyResult = result
@@ -170,12 +185,15 @@ final class Monitor: ObservableObject {
         let scanner = scanner
         let currentGeneration = generation
         let preferredID = selectedID
+        let languageCode = L10n.current.languageCode
         worker.async { [weak self] in
             let result = scanner.scan(force: force, preferredID: preferredID)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.busy = false
-                guard self.generation == currentGeneration else { self.refresh(force: true); return }
+                guard self.generation == currentGeneration, L10n.current.languageCode == languageCode else {
+                    self.refresh(force: true); return
+                }
                 self.sessions = result.sessions
                 self.message = result.message
                 self.now = Date()
@@ -202,9 +220,9 @@ final class Monitor: ObservableObject {
     }
     func explainCloudSessions() {
         let alert = NSAlert()
-        alert.messageText = "云端会话暂时无法统计速度"
-        alert.informativeText = "当前应用读取本机 Codex 日志。云端聊天没有写入本机日志时不会出现在列表中。聊天内容和工具记录不能代替输出 token 用量与模型请求计时；缺少这些数据时无法计算 tok/s。"
-        alert.addButton(withTitle: "知道了")
+        alert.messageText = L10n.text("云端会话暂时无法统计速度")
+        alert.informativeText = L10n.text("当前应用读取本机 Codex 日志。云端聊天没有写入本机日志时不会出现在列表中。聊天内容和工具记录不能代替输出 token 用量与模型请求计时；缺少这些数据时无法计算 tok/s。")
+        alert.addButton(withTitle: L10n.text("知道了"))
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }
@@ -222,8 +240,8 @@ final class Monitor: ObservableObject {
     }
     func chooseFolder() {
         let panel = NSOpenPanel()
-        panel.title = "选择 Codex 的 sessions 日志文件夹"
-        panel.message = "通常位于 ~/.codex/sessions；也可以选择自定义的 Codex 日志目录。"
+        panel.title = L10n.text("选择 Codex 的 sessions 日志文件夹")
+        panel.message = L10n.text("通常位于 ~/.codex/sessions；也可以选择自定义的 Codex 日志目录。")
         panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.directoryURL = folder.deletingLastPathComponent()
@@ -244,7 +262,7 @@ final class Monitor: ObservableObject {
     func exportCSV() {
         guard let session else { return }
         let panel = NSSavePanel()
-        panel.title = "导出最近的速度记录"
+        panel.title = L10n.text("导出最近的速度记录")
         panel.nameFieldStringValue = "Codex-Speed.csv"
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -264,7 +282,7 @@ final class Monitor: ObservableObject {
                 String(turn.continuousOutputCalls),
                 decimal(turn.continuousOutputRate), decimal(turn.timeToFirstToken),
                 decimal(turn.firstVisibleOutputDelay), metric.rawValue,
-                agent.id, agent.id == session.id ? "主 agent" : agent.label, turn.rootTurnID ?? "", "agent_turn"]
+                agent.id, agent.id == session.id ? L10n.text("主 agent") : agent.label, turn.rootTurnID ?? "", "agent_turn"]
             csv += fields.map(quote).joined(separator: ",") + "\n"
           }
           var total = Array(repeating: "", count: 24)
@@ -279,7 +297,7 @@ final class Monitor: ObservableObject {
         total[23] = "family_lifetime"
         csv += total.map(quote).joined(separator: ",") + "\n"
         do { try csv.write(to: url, atomically: true, encoding: .utf8) }
-        catch { message = "导出失败：\(error.localizedDescription)" }
+        catch { message = L10n.text("导出失败：%@", error.localizedDescription) }
     }
 }
 
@@ -297,7 +315,7 @@ func tokenText(_ number: Int) -> String {
 }
 func durationText(_ seconds: Double) -> String {
     let value = max(0, Int(seconds))
-    if value >= 3600 { return "\(value / 3600)小时\(value % 3600 / 60)分" }
-    if value >= 60 { return "\(value / 60)分\(value % 60)秒" }
-    return "\(value)秒"
+    if value >= 3600 { return L10n.text("%@小时%@分", value / 3600, value % 3600 / 60) }
+    if value >= 60 { return L10n.text("%@分%@秒", value / 60, value % 60) }
+    return L10n.text("%@秒", value)
 }

@@ -14,7 +14,7 @@ public enum ApiServiceTier: String, Sendable {
         switch self {
         case .standard: return "Standard"
         case .fast: return "Fast"
-        case .unknown: return "未知模式"
+        case .unknown: return L10n.text("未知模式")
         }
     }
     var priceMultiplier: Double? {

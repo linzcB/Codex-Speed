@@ -7,7 +7,7 @@ import SpeedCore
 @MainActor
 final class MenuReadout: NSView {
     var speed = "Σ — tok/s"
-    var current = "当前 — tok/s"
+    var current = L10n.text("当前 — tok/s")
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func draw(_ dirtyRect: NSRect) {
         let paragraph = NSMutableParagraphStyle()
@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         button.addSubview(readout)
         button.target = self; button.action = #selector(click)
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-        button.setAccessibilityLabel("Codex Speed 速度监测")
+        button.setAccessibilityLabel(L10n.text("Codex Speed 速度监测"))
         monitor.didUpdate = { [weak self] in self?.updateReadout() }
         monitor.start()
         updateReadout()
@@ -63,6 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(localeChanged),
+            name: NSLocale.currentLocaleDidChangeNotification, object: nil)
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(showDetails),
             name: Notification.Name("local.codexspeed.monitor.showDetails"), object: nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.showDetails() }
@@ -71,21 +73,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Dashboard(monitor: monitor, onPin: { [weak self] in self?.togglePin() })
     }
     private func updateReadout() {
+        statusItem.button?.setAccessibilityLabel(L10n.text("Codex Speed 速度监测"))
         let global = monitor.global
         readout.speed = "Σ \(rateText(global.sum)) tok/s"
-        readout.current = "当前 \(rateText(monitor.currentSpeed.sum)) tok/s"
+        readout.current = L10n.text("当前 %@ tok/s", rateText(monitor.currentSpeed.sum))
         readout.needsDisplay = true
-        let description = "全局 \(monitor.metricTitle) · \(readout.speed) · \(readout.current)\n\(global.activeChats) 个活跃聊天 · \(global.sampledAgents)/\(global.activeAgents) 个 agent 会话有速度样本（\(monitor.scopeText)）\n当前会话：\(monitor.session?.label ?? "等待会话")"
-        statusItem.button?.toolTip = description + "\n点击查看详情；右键退出。"
+        let description = L10n.text("全局 %@ · %@ · %@\n%@ 个活跃聊天 · %@/%@ 个 agent 会话有速度样本（%@）\n当前会话：%@", monitor.metricTitle, readout.speed, readout.current, global.activeChats, global.sampledAgents, global.activeAgents, monitor.scopeText, monitor.session?.displayLabel ?? L10n.text("等待会话"))
+        statusItem.button?.toolTip = description + L10n.text("\n点击查看详情；右键退出。")
         statusItem.button?.setAccessibilityValue(description)
     }
     @objc func click() {
         if NSApp.currentEvent?.type == .rightMouseUp {
             let menu = NSMenu()
-            menu.addItem(withTitle: "查看速度详情", action: #selector(showDetails), keyEquivalent: "").target = self
-            menu.addItem(withTitle: monitor.pinned ? "收起悬浮侧栏" : "显示悬浮侧栏", action: #selector(togglePin), keyEquivalent: "").target = self
+            menu.addItem(withTitle: L10n.text("查看速度详情"), action: #selector(showDetails), keyEquivalent: "").target = self
+            menu.addItem(withTitle: monitor.pinned ? L10n.text("收起悬浮侧栏") : L10n.text("显示悬浮侧栏"), action: #selector(togglePin), keyEquivalent: "").target = self
             menu.addItem(NSMenuItem.separator())
-            menu.addItem(withTitle: "退出 Codex Speed", action: #selector(quit), keyEquivalent: "q").target = self
+            menu.addItem(withTitle: L10n.text("退出 Codex Speed"), action: #selector(quit), keyEquivalent: "q").target = self
             // Attaching a menu to NSStatusItem takes over its button tracking.
             // Keep the original click target intact across context-menu use.
             if let button = statusItem.button {
@@ -223,6 +226,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if dropdown != nil { showDetails() }
         constrainPanel()
     }
+    @objc private func localeChanged() {
+        if monitor.language == .system { monitor.localizationChanged() }
+    }
     @objc func quit() { NSApp.terminate(nil) }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
@@ -288,12 +294,12 @@ struct CodexSpeedMain {
             let current = GlobalSpeed(sessions: [session], at: Date(), metric: .continuousOutput, includeSubagents: includeSubagents)
             let usage = session.usage(includeSubagents: includeSubagents)
             let agents: [[String: Any]] = session.participants.map { agent in
-                ["id": agent.id, "label": agent.label, "output": agent.totalUsage.output,
+                ["id": agent.id, "label": agent.displayLabel, "output": agent.totalUsage.output,
                  "input": agent.totalUsage.input, "reasoning": agent.totalUsage.reasoning,
                  "has_cumulative": agent.hasCumulativeUsage, "loading": agent.isLoading,
                  "active": agent.isActive(at: Date()), "configured_service_tier": agent.serviceTier.rawValue]
             }
-            var report: [String: Any] = ["id": session.id, "label": session.label,
+            var report: [String: Any] = ["id": session.id, "label": session.displayLabel,
                 "output": usage.output, "input": usage.input,
                 "reasoning": usage.reasoning, "child_count": session.agents.count,
                 "active_child_count": session.agents.filter { $0.isActive(at: Date()) }.count,
@@ -367,7 +373,18 @@ struct CodexSpeedMain {
         let scanner = LogScanner(directory: monitor.folder)
         let result = scanner.scan(force: true)
         monitor.sessions = result.sessions; monitor.message = result.message
-        let view = NSHostingView(rootView: Dashboard(monitor: monitor, onPin: {}))
+        if CommandLine.arguments.contains("--preview-daily") {
+            monitor.showDailyHistory = true
+            let scanner = DailyStatisticsScanner(directory: monitor.folder)
+            var history = scanner.scan(force: true)
+            for _ in 0..<1000 where history.isLoading { history = scanner.scan() }
+            monitor.dailyResult = history
+        }
+        let content = Dashboard(monitor: monitor, onPin: {})
+            .environment(\.colorScheme, .dark)
+            .frame(width: 360).fixedSize(horizontal: false, vertical: true)
+            .background(Color(nsColor: .windowBackgroundColor))
+        let view = NSHostingView(rootView: content)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 650),
             styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: .darkAqua)
@@ -378,6 +395,7 @@ struct CodexSpeedMain {
         RunLoop.main.run(until: Date().addingTimeInterval(0.8))
         let size = view.fittingSize
         window.setContentSize(NSSize(width: 360, height: size.height))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
         view.layoutSubtreeIfNeeded()
         guard let image = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: image)

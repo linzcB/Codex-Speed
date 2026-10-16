@@ -5,6 +5,8 @@ import Foundation
 public struct AgentSnapshot: Identifiable, Sendable {
     public var id: String
     public var label: String
+    public var labelIsFallback: Bool
+    public var displayLabel: String { labelIsFallback ? L10n.text(label) : label }
     public var model: String
     public var serviceTier: ApiServiceTier
     public var turns: [Turn]
@@ -18,6 +20,7 @@ public struct AgentSnapshot: Identifiable, Sendable {
 
     public init(log: SessionLog) {
         id = log.id; label = log.agentPath ?? log.agentNickname ?? log.label
+        labelIsFallback = log.agentPath == nil && (log.agentNickname == nil ? log.labelIsFallback : log.hasFallbackNickname)
         model = log.model; serviceTier = log.serviceTier; turns = log.turns; totalUsage = log.lifetimeUsage
         hasCumulativeUsage = log.hasCumulativeUsage; modifiedAt = log.modifiedAt
         isLoading = log.hasUnreadBytes; hasSkippedHistory = log.hasSkippedHistory; error = log.error
