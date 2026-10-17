@@ -46,3 +46,13 @@ Both views share **Include Codex auto review**, which defaults to off and rememb
 The filter also applies to both live speed rows, active chat/agent counts, current-round and lifetime session usage, and CSV exports. Mixed-model turns retain only included requests and their paired output samples. Original agent details remain visible and are labeled when excluded. An agent currently running auto review is excluded from active counts, while its earlier paid-model usage remains in lifetime totals.
 
 The subagent toggle remains independent. The app does not modify logs. Missing log prefixes are read once in bounded background batches for per-model lifetime accounting; the UI marks loading or incomplete coverage. Requests without an identifiable model remain included. Turning the switch on restores the logged usage; it does not assign a new price or confirm a charge.
+
+## Hourly spending pace
+
+The live panel projects **included request costs in the last N minutes ÷ (N × 60) × 3600**, in USD/hour. N is 1, 5, or 15 minutes (default 5, remembered). This uses the existing dated price catalog, including input, cache reads/writes, output, and recorded Standard/Fast settings. It is a recent usage-rate estimate assuming the same future activity, not a confirmed bill.
+
+The denominator is the full wall-clock window, including waits and tools. Completed and archived local chats still contribute while their requests remain in the window, even if they are absent from the live chat picker. The global estimate adds unique threads; the current-chat estimate includes its owned subagents when enabled. Both existing aggregation switches apply per request.
+
+Usage is assigned to its recorded completion timestamp. An unfinished request does not contribute until its usage record arrives, so rates can update in steps. Events outside `(now − window, now]` are excluded. A complete window with no calls shows zero; calls with no supported price, mode, or cache breakdown remain unpriced rather than free. The UI shows priced coverage, waits for ongoing log reads, and marks known read gaps as partial. Cloud-only logs remain unavailable.
+
+Only numeric summaries for the recent 15-minute range are retained for this feature and expired during scans. It reuses the live incremental reader; opening the live panel does not start a separate full daily-history scan. The output-speed metric does not change this spending denominator.

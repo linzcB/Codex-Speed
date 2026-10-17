@@ -114,10 +114,25 @@ public final class SessionLog {
     private var currentID: String?
     private var threadTotal = Usage()
     private var modelUsage: ModelUsageLedger?
+    private var costObservationDate = Date()
+    private var hasUndatedCostUsage = false
+    private var unresolvedCostTurns: [String: Date] = [:]
+    public var recentCosts: [ApiCostSample] { modelUsage?.costSamples ?? [] }
+    public var hasRecentCostCoverage: Bool {
+        !hasUnreadBytes && !hasSkippedHistory && !hasPendingLine && skippedLargeLines == 0 && error == nil && !hasUndatedCostUsage && unresolvedCostTurns.isEmpty
+    }
+    public func prepareRecentCosts(at now: Date) {
+        costObservationDate = now
+        unresolvedCostTurns = unresolvedCostTurns.filter { $0.value >= now.addingTimeInterval(-ApiCostWindow.maximumSeconds) }
+        modelUsage?.prepareRecentCosts(at: now)
+    }
     private var needsFullModelHistory = false
     private var ledger: ModelUsageLedger? {
         guard !fullHistory else { return nil }
-        if modelUsage == nil { modelUsage = ModelUsageLedger() }
+        if modelUsage == nil {
+            modelUsage = ModelUsageLedger()
+            modelUsage?.prepareRecentCosts(at: costObservationDate)
+        }
         return modelUsage
     }
     private var tierChanges: [(date: Date, tier: ApiServiceTier)] = []
@@ -208,7 +223,7 @@ public final class SessionLog {
     private func reset() {
         offset = 0; pending.removeAll(); turns.removeAll()
         currentID = nil; threadTotal = Usage(); discardingLine = false
-        modelUsage = nil
+        modelUsage = nil; hasUndatedCostUsage = false; unresolvedCostTurns.removeAll()
         skippedLargeLines = 0
         id = url.deletingPathExtension().lastPathComponent
         label = "未命名会话"; labelIsFallback = true; cwd = ""; isSubagent = false
@@ -382,13 +397,16 @@ public final class SessionLog {
             let i = ensureTurn(turnID, at: timestamp)
             turns[i].rootTurnID = payload["root_turn_id"] as? String ?? turns[i].rootTurnID
             guard turns[i].seenResponses.insert(responseID).inserted else { return }
-            ledger?.recordModern(responseID: responseID, turnID: turns[i].id, usage: Usage(json))
             if !turns[i].modernUsage {
                 // Replace legacy event totals when both formats coexist.
                 turns[i].usage = Usage(); turns[i].calls = 0; turns[i].modernUsage = true
             }
             let pricingAt = turns[i].pendingOutput.start ?? turns[i].lastUsageAt ?? turns[i].start
             let requestTier = pricingTier(at: pricingAt)
+            if date(root["timestamp"]) == nil { hasUndatedCostUsage = true }
+            unresolvedCostTurns.removeValue(forKey: turns[i].id)
+            ledger?.recordModern(responseID: responseID, turnID: turns[i].id, usage: Usage(json),
+                timestamp: date(root["timestamp"]), pricingUsage: ApiRequestUsage(json), serviceTier: requestTier)
             turns[i].finishOutput(responseID: responseID, tokens: Usage(json).output, at: timestamp)
             let sample = turns[i].outputSamples.last.flatMap { $0.responseID == responseID ? $0 : nil }
             dailyStatistics?.recordModern(responseID: responseID, turnID: turns[i].id,
@@ -482,16 +500,25 @@ public final class SessionLog {
             // Old cumulative counters in forked context cannot be attributed
             // reliably. Children require their explicit owned usage records.
             guard !isAttributedSubagent else {
+                let target = turnID ?? currentID ?? "unattributed"
+                if !fullHistory, modelUsage?.hasModernUsage(in: target) != true {
+                    let at = date(root["timestamp"]) ?? costObservationDate
+                    if at >= costObservationDate.addingTimeInterval(-ApiCostWindow.maximumSeconds) {
+                        unresolvedCostTurns[target] = at
+                    }
+                }
                 dailyStatistics?.noteUnattributedLegacy(turnID: turnID ?? currentID)
                 return
             }
             guard let info = payload["info"] as? [String: Any],
                   let totalJSON = info["total_token_usage"] as? [String: Any] else { return }
             let total = Usage(totalJSON)
+            if date(root["timestamp"]) == nil { hasUndatedCostUsage = true }
             let i = ensureTurn(turnID, at: timestamp)
+            let requestTier = pricingTier(at: turns[i].pendingOutput.start ?? turns[i].lastUsageAt ?? turns[i].start)
             dailyStatistics?.recordLegacy(turnID: turns[i].id, timestamp: date(root["timestamp"]),
                 model: turns[i].model, totalJSON: totalJSON, lastJSON: info["last_token_usage"] as? [String: Any],
-                serviceTier: pricingTier(at: turns[i].pendingOutput.start ?? turns[i].lastUsageAt ?? turns[i].start))
+                serviceTier: requestTier)
             defer { if !turns[i].modernUsage { threadTotal = total; hasCumulativeUsage = true } }
             guard !turns[i].modernUsage else { return }
             guard !turns[i].hasLegacyTotal || total != turns[i].legacyTotal else { return }
@@ -513,7 +540,11 @@ public final class SessionLog {
             turns[i].pendingOutput = PendingOutput()
             turns[i].hasUsage = true; turns[i].lastUsageAt = timestamp
             turns[i].calls += 1
-            ledger?.recordLegacy(turnID: turns[i].id, usage: turns[i].usage.subtracting(previousUsage))
+            let delta = turns[i].usage.subtracting(previousUsage)
+            let lastJSON = info["last_token_usage"] as? [String: Any]
+            let pricingUsage = lastJSON.flatMap { Usage($0) == delta ? ApiRequestUsage($0) : nil }
+            ledger?.recordLegacy(turnID: turns[i].id, usage: delta, timestamp: date(root["timestamp"]),
+                pricingUsage: pricingUsage, serviceTier: requestTier)
         default: break
         }
     }
@@ -552,6 +583,8 @@ public struct SessionSnapshot: Identifiable, Sendable {
 public struct ScanResult: Sendable {
     public var sessions: [SessionSnapshot]
     public var message: String?
+    public var costSessions: [SessionSnapshot] = []
+    public var costReadGaps = false
 }
 
 // Mutable scanner state is protected by this lock. Callers receive value-type
@@ -601,6 +634,9 @@ public final class LogScanner: @unchecked Sendable {
                     }
                 } else { discoveryFailed = true }
             }
+            // Expire numeric cost samples even for chats that leave the recent
+            // candidate set, without reading their log bodies again.
+            for log in logs.values { log.prepareRecentCosts(at: now) }
             let existing = Set(files.map { $0.0 })
             logs = logs.filter { existing.contains($0.key) }
             // Prefer the newest physical file for a thread; backups and moved
@@ -615,15 +651,16 @@ public final class LogScanner: @unchecked Sendable {
                 if isArchived { archived.insert(url) }
                 if byID[log.id] == nil { byID[log.id] = url }
             }
-            let rootURLs = Set(byID.values.filter { logs[$0]?.isSubagent == false && !archived.contains($0) })
+            let allRootURLs = Set(byID.values.filter { logs[$0]?.isSubagent == false })
+            let rootURLs = allRootURLs.filter { !archived.contains($0) }
             func owner(of log: SessionLog) -> String? {
                 guard log.isAttributedSubagent else { return nil }
                 var cursor = log
                 var seen = Set<String>()
                 while seen.insert(cursor.id).inserted {
-                    if let root = cursor.sessionID, let url = byID[root], rootURLs.contains(url) { return root }
+                    if let root = cursor.sessionID, let url = byID[root], allRootURLs.contains(url) { return root }
                     guard let parent = cursor.parentThreadID, let url = byID[parent], let next = logs[url] else { return nil }
-                    if rootURLs.contains(url) { return next.id }
+                    if allRootURLs.contains(url) { return next.id }
                     guard next.isAttributedSubagent else { return nil }
                     cursor = next
                 }
@@ -634,18 +671,18 @@ public final class LogScanner: @unchecked Sendable {
                 if let log = logs[url], let id = owner(of: log) { owners[url] = id }
             }
             var familyDates: [String: Date] = [:]
-            for url in rootURLs { familyDates[logs[url]!.id] = dates[url] }
+            for url in allRootURLs { familyDates[logs[url]!.id] = dates[url] }
             for (url, owner) in owners { familyDates[owner] = max(familyDates[owner] ?? .distantPast, dates[url] ?? .distantPast) }
-            let ordered = rootURLs.sorted {
+            let ordered = allRootURLs.sorted {
                 (familyDates[logs[$0]!.id] ?? .distantPast) > (familyDates[logs[$1]!.id] ?? .distantPast)
             }
             // Read every potentially active family, plus recent chats for the
             // picker and an explicitly selected older chat. Idle history cannot
             // dilute the global speed average or cause unbounded startup reads.
-            let recent = Set(ordered.prefix(8))
+            let recent = Set(ordered.filter { rootURLs.contains($0) }.prefix(8))
             rootCandidates = ordered.filter { url in
                 recent.contains(url) || logs[url]?.id == preferredID ||
-                now.timeIntervalSince(familyDates[logs[url]!.id] ?? .distantPast) < 300
+                now.timeIntervalSince(familyDates[logs[url]!.id] ?? .distantPast) < ApiCostWindow.maximumSeconds
             }
             let rootIDs = Set(rootCandidates.compactMap { logs[$0]?.id })
             candidates = rootCandidates + owners.keys.filter { rootIDs.contains(owners[$0]!) }
@@ -661,6 +698,7 @@ public final class LogScanner: @unchecked Sendable {
             let index = (startIndex + offset) % candidates.count
             guard let log = logs[candidates[index]] else { continue }
             let budget = includeAutoReview ? 2 * 1024 * 1024 : min(remaining, 2 * 1024 * 1024)
+            log.prepareRecentCosts(at: now)
             log.refresh(maxBytes: budget, requiresModelUsage: !includeAutoReview)
             if !includeAutoReview, log.lastReadByteCount > 0 {
                 remaining -= log.lastReadByteCount; readCursor = (index + 1) % candidates.count
@@ -685,9 +723,11 @@ public final class LogScanner: @unchecked Sendable {
         // Preserve the compact picker when recent files have no actual running
         // turn; active chats are always retained beyond the usual eight slots.
         snapshots.sort { $0.modifiedAt > $1.modifiedAt }
+        let costSessions = snapshots
+        snapshots = snapshots.filter { !$0.url.path.hasPrefix(directory.deletingLastPathComponent().appendingPathComponent("archived_sessions").path + "/") }
         let recentIDs = Set(snapshots.prefix(8).map(\.id))
         snapshots = snapshots.filter { recentIDs.contains($0.id) || $0.id == preferredID || $0.isActive(at: now) }
         return ScanResult(sessions: snapshots,
-            message: discoveryMessage ?? (snapshots.isEmpty ? L10n.text("尚未发现会话。发送一条 Codex 消息后会自动出现。") : nil))
+            message: discoveryMessage ?? (snapshots.isEmpty ? L10n.text("尚未发现会话。发送一条 Codex 消息后会自动出现。") : nil), costSessions: costSessions, costReadGaps: discoveryMessage != nil)
     }
 }

@@ -327,7 +327,7 @@ struct CodexSpeedMain {
             let scanner = LogScanner(directory: URL(fileURLWithPath: arguments[3]))
             let includeReview = !arguments.contains("--exclude-auto-review")
             var result = scanner.scan(force: true, preferredID: arguments[2], includeAutoReview: includeReview)
-            for _ in 0..<1000 where result.sessions.contains(where: \.isLoading) {
+            for _ in 0..<1000 where result.costSessions.contains(where: \.isLoading) {
                 result = scanner.scan(preferredID: arguments[2], includeAutoReview: includeReview)
             }
             guard let session = result.sessions.first(where: { $0.id == arguments[2] }) else {
@@ -352,6 +352,16 @@ struct CodexSpeedMain {
                 "complete": counted.allSatisfy { !$0.isLoading && $0.hasCumulativeUsage && $0.error == nil }, "agents": agents,
                 "global_active_chats": global.activeChats, "global_active_agents": global.activeAgents,
                 "global_sampled_agents": global.sampledAgents]
+            let costWindow = ApiCostWindow.fiveMinutes
+            func costReport(_ sessions: [SessionSnapshot]) -> [String: Any] {
+                let value = ApiHourlyRate(sessions: sessions, at: Date(), window: costWindow,
+                    includeSubagents: includeSubagents, includeAutoReview: includeReview, hasReadGaps: result.costReadGaps)
+                return ["window_seconds": costWindow.rawValue, "window_usd": value.windowUSD as Any? ?? NSNull(),
+                    "hourly_usd": value.hourlyUSD as Any? ?? NSNull(), "requests": value.requests,
+                    "priced_requests": value.cost.pricedRequests, "partial": value.isPartial, "loading": value.isLoading]
+            }
+            report["global_api_cost_rate"] = costReport(result.costSessions)
+            report["current_api_cost_rate"] = costReport(result.costSessions.filter { $0.id == session.id })
             report["global_sum"] = global.sum as Any? ?? NSNull()
             report["global_average"] = global.average as Any? ?? NSNull()
             report["current_sum"] = current.sum as Any? ?? NSNull()
@@ -420,10 +430,11 @@ struct CodexSpeedMain {
         let monitor = Monitor()
         let scanner = LogScanner(directory: monitor.folder)
         var result = scanner.scan(force: true, includeAutoReview: monitor.includeAutoReview)
-        for _ in 0..<1000 where result.sessions.contains(where: \.isLoading) {
+        for _ in 0..<1000 where result.costSessions.contains(where: \.isLoading) {
             result = scanner.scan(includeAutoReview: monitor.includeAutoReview)
         }
         monitor.sessions = result.sessions; monitor.message = result.message
+        monitor.costSessions = result.costSessions; monitor.costReadGaps = result.costReadGaps; monitor.costScanReady = true
         if CommandLine.arguments.contains("--preview-daily") {
             monitor.showDailyHistory = true
             let scanner = DailyStatisticsScanner(directory: monitor.folder)

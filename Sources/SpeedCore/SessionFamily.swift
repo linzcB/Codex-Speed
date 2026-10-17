@@ -12,6 +12,8 @@ public struct AgentSnapshot: Identifiable, Sendable {
     public var turns: [Turn]
     public var totalUsage: Usage
     public var autoReviewUsage: Usage
+    public var recentCosts: [ApiCostSample]
+    public var hasRecentCostCoverage: Bool
     public var hasModelUsageBreakdown: Bool
     private var excludesAutoReview = false
     public var hasCumulativeUsage: Bool
@@ -25,6 +27,7 @@ public struct AgentSnapshot: Identifiable, Sendable {
         id = log.id; label = log.agentPath ?? log.agentNickname ?? log.label
         labelIsFallback = log.agentPath == nil && (log.agentNickname == nil ? log.labelIsFallback : log.hasFallbackNickname)
         model = log.model; serviceTier = log.serviceTier; turns = log.turnsWithUsageBreakdown; totalUsage = log.lifetimeUsage
+        recentCosts = log.recentCosts; hasRecentCostCoverage = log.hasRecentCostCoverage
         autoReviewUsage = log.autoReviewUsage; hasModelUsageBreakdown = log.hasModelUsageBreakdown
         hasCumulativeUsage = log.hasCumulativeUsage; modifiedAt = log.modifiedAt
         isLoading = log.hasUnreadBytes; hasSkippedHistory = log.hasSkippedHistory; error = log.error
@@ -41,6 +44,7 @@ public struct AgentSnapshot: Identifiable, Sendable {
         var result = self
         result.totalUsage = usage(includeAutoReview: false)
         result.turns = turns.map { $0.filteringAutoReview(false) }
+        result.recentCosts.removeAll { UsageFilter.isAutoReview(model: $0.model) }
         result.hasCumulativeUsage = hasCumulativeUsage && hasModelUsageBreakdown
         result.excludesAutoReview = true
         return result

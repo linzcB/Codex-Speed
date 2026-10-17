@@ -87,6 +87,8 @@ struct Dashboard: View {
             .padding(16)
             .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 15))
 
+            ApiHourlyRateView(monitor: monitor, accent: accent)
+
             Text("\(monitor.session?.displayLabel ?? L10n.text("所选会话")) · \(monitor.scopeText)")
                 .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
             HStack(spacing: 10) {

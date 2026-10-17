@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.5 — 2026-10-17
+
+- Estimate hourly API-equivalent spending for all local chats and the current chat from a rolling 1, 5, or 15 minute wall-clock window; default to 5 minutes.
+- Include recorded input, output, cache, Standard/Fast, and long-context pricing, honoring both subagent and auto review filters.
+- Keep recent completed and archived chats in cost coverage without expanding the live chat picker; mark unpriced calls and incomplete/loading logs.
+- Retain only recent numeric cost summaries alongside existing usage accounting and reuse incremental log reads.
+
 ## 1.1.4 — 2026-10-16
 
 - Show language choices directly in the More menu, avoiding the hover transition into a disappearing submenu.

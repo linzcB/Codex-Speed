@@ -7,6 +7,10 @@ import SpeedCore
 @MainActor
 final class Monitor: ObservableObject {
     @Published var sessions: [SessionSnapshot] = [] { didSet { invalidateStatistics() } }
+    @Published var costSessions: [SessionSnapshot] = [] { didSet { invalidateStatistics() } }
+    @Published var costScanReady = false
+    @Published var costReadGaps = false
+    @Published var costWindow = ApiCostWindow.fiveMinutes { didSet { invalidateStatistics() } }
     @Published var selectedID = "automatic" { didSet { invalidateStatistics() } }
     @Published var now = Date() { didSet { invalidateStatistics() } }
     @Published var message: String?
@@ -52,6 +56,8 @@ final class Monitor: ObservableObject {
     private var cachedCurrent: GlobalSpeed?
     private var cachedRound: FamilyRound?
     private var cachedCountedAgents: [AgentSnapshot]?
+    private var cachedGlobalCost: ApiHourlyRate?
+    private var cachedCurrentCost: ApiHourlyRate?
     private let dayFormatter: DateFormatter = {
         let value = DateFormatter()
         value.calendar = Calendar(identifier: .gregorian)
@@ -76,6 +82,7 @@ final class Monitor: ObservableObject {
         selectedID = UserDefaults.standard.string(forKey: "selectedSessionID") ?? "automatic"
         includeSubagents = UserDefaults.standard.object(forKey: "includeSubagents") as? Bool ?? true
         includeAutoReview = UserDefaults.standard.bool(forKey: "includeAutoReview")
+        costWindow = ApiCostWindow(rawValue: UserDefaults.standard.integer(forKey: "costWindowSeconds")) ?? .fiveMinutes
         // Adopt the requested output-only default once when upgrading. Further
         // launches keep the user's explicit choice among the three modes.
         if UserDefaults.standard.bool(forKey: "outputTimingDefaultApplied") {
@@ -90,6 +97,7 @@ final class Monitor: ObservableObject {
         sessionResolved = false; cachedSession = nil
         cachedGlobal = nil; cachedCurrent = nil; cachedRound = nil
         cachedCountedAgents = nil
+        cachedGlobalCost = nil; cachedCurrentCost = nil
     }
     var session: SessionSnapshot? {
         if sessionResolved { return cachedSession }
@@ -135,6 +143,25 @@ final class Monitor: ObservableObject {
         if let cachedCurrent { return cachedCurrent }
         let value = GlobalSpeed(sessions: session.map { [$0] } ?? [], at: now, metric: metric, includeSubagents: includeSubagents, includeAutoReview: includeAutoReview)
         cachedCurrent = value; return value
+    }
+    var globalCostRate: ApiHourlyRate? {
+        guard costScanReady, !(costSessions.isEmpty && message != nil) else { return nil }
+        if let cachedGlobalCost { return cachedGlobalCost }
+        let value = ApiHourlyRate(sessions: costSessions, at: now, window: costWindow,
+            includeSubagents: includeSubagents, includeAutoReview: includeAutoReview, hasReadGaps: costReadGaps)
+        cachedGlobalCost = value
+        return value
+    }
+    var currentCostRate: ApiHourlyRate? {
+        guard costScanReady, let session else { return nil }
+        if let cachedCurrentCost { return cachedCurrentCost }
+        let value = ApiHourlyRate(sessions: costSessions.filter { $0.id == session.id }, at: now, window: costWindow,
+            includeSubagents: includeSubagents, includeAutoReview: includeAutoReview, hasReadGaps: costReadGaps)
+        cachedCurrentCost = value
+        return value
+    }
+    func costWindowChanged() {
+        UserDefaults.standard.set(costWindow.rawValue, forKey: "costWindowSeconds")
     }
     func agentRate(_ agent: AgentSnapshot) -> Double? {
         guard !agent.isLoading, let turn = agent.latest else { return nil }
@@ -215,7 +242,7 @@ final class Monitor: ObservableObject {
     }
     private func scheduleTimer() {
         guard started else { timer?.invalidate(); timer = nil; return }
-        let interval = sessions.contains(where: \.isLoading) ? 0.25 : RefreshPolicy.interval(isActive: isLive, isVisible: detailsVisible,
+        let interval = costSessions.contains(where: \.isLoading) || sessions.contains(where: \.isLoading) ? 0.25 : RefreshPolicy.interval(isActive: isLive, isVisible: detailsVisible,
                                               isObserving: observer?.isWatching == true)
         // File events must not keep postponing the timer: history refresh and
         // elapsed-time updates still need a steady cadence during busy streams.
@@ -325,6 +352,9 @@ final class Monitor: ObservableObject {
                       self.includeAutoReview == includeReview else {
                     if self.started { self.refresh(force: true) }; return
                 }
+                self.costReadGaps = result.costReadGaps
+                self.costSessions = result.costSessions
+                self.costScanReady = true
                 self.sessions = result.sessions
                 self.message = result.message
                 self.now = Date()
@@ -397,7 +427,8 @@ final class Monitor: ObservableObject {
         dailyResult = nil; dailySelectedDay = "today"; lastDailyScan = .distantPast
         observeDirectory()
         if detailsVisible && showDailyHistory { refreshDaily(force: true) }
-        sessions = []; selectedID = "automatic"; history = []
+        sessions = []; costSessions = []; costScanReady = false; costReadGaps = false
+        selectedID = "automatic"; history = []
         message = nil; didUpdate?(); refresh(force: true)
     }
     func exportCSV() {

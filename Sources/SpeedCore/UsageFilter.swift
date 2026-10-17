@@ -46,6 +46,21 @@ final class ModelUsageLedger {
     private var pendingByTurn: [String: Set<String>] = [:]
     private var legacyByTurn: [String: Set<String>] = [:]
     private var sequence = 0
+    private var modernTurns = Set<String>()
+    func hasModernUsage(in turnID: String) -> Bool { modernTurns.contains(turnID) }
+    private var recentCosts: [String: ApiCostSample] = [:]
+    private var costCutoff = Date.distantPast
+
+    func prepareRecentCosts(at now: Date) {
+        costCutoff = now.addingTimeInterval(-ApiCostWindow.maximumSeconds)
+        recentCosts = recentCosts.filter { $0.value.timestamp >= costCutoff }
+    }
+    var costSamples: [ApiCostSample] { Array(recentCosts.values) }
+    private func recordCost(key: String, turnID: String, timestamp: Date?, usage: ApiRequestUsage?, tier: ApiServiceTier) {
+        guard let timestamp, timestamp.timeIntervalSince1970.isFinite, timestamp >= costCutoff else { return }
+        recentCosts[key] = ApiCostSample(id: key, timestamp: timestamp,
+            model: modelByTurn[turnID] ?? "未知模型", usage: usage, serviceTier: tier)
+    }
     private var reviewByTurn: [String: Usage] = [:]
     private var reviewCallsByTurn: [String: Int] = [:]
     private var lastIncludedModel: [String: (model: String, sequence: Int)] = [:]
@@ -79,25 +94,32 @@ final class ModelUsageLedger {
             guard var record = records[key] else { continue }
             apply(record, sign: -1); record.model = model
             records[key] = record; apply(record, sign: 1)
+            recentCosts[key]?.resolveModel(model)
         }
     }
 
     func contains(responseID: String) -> Bool { records["modern:" + responseID] != nil }
 
-    func recordModern(responseID: String, turnID: String, usage: Usage) {
+    func recordModern(responseID: String, turnID: String, usage: Usage,
+                      timestamp: Date? = nil, pricingUsage: ApiRequestUsage? = nil, serviceTier: ApiServiceTier = .unknown) {
         let key = "modern:" + responseID
         guard records[key] == nil else { return }
+        modernTurns.insert(turnID)
         for oldKey in legacyByTurn.removeValue(forKey: turnID) ?? [] {
             if let old = records.removeValue(forKey: oldKey) { apply(old, sign: -1) }
             pendingByTurn[turnID]?.remove(oldKey)
+            recentCosts.removeValue(forKey: oldKey)
         }
         insert(key: key, turnID: turnID, usage: usage)
+        recordCost(key: key, turnID: turnID, timestamp: timestamp, usage: pricingUsage, tier: serviceTier)
     }
 
-    func recordLegacy(turnID: String, usage: Usage) {
+    func recordLegacy(turnID: String, usage: Usage, timestamp: Date? = nil,
+                      pricingUsage: ApiRequestUsage? = nil, serviceTier: ApiServiceTier = .unknown) {
         let key = "legacy:\(sequence + 1)"
         insert(key: key, turnID: turnID, usage: usage)
         legacyByTurn[turnID, default: []].insert(key)
+        recordCost(key: key, turnID: turnID, timestamp: timestamp, usage: pricingUsage, tier: serviceTier)
     }
 
     private func insert(key: String, turnID: String, usage: Usage) {

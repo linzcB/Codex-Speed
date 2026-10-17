@@ -183,3 +183,27 @@
 "已排除历史 auto review 用量" = "Historical auto review usage excluded";
 
 "更多" = "More";
+
+"预计每小时 API 费用" = "Estimated hourly API cost";
+
+"观察窗口" = "Lookback window";
+
+"%@分钟" = "%@ min";
+
+"全局" = "Global";
+
+"当前会话：%@ USD/h" = "Current chat: %@ USD/h";
+
+"最近 %@ 分钟：%@ · 估价覆盖 %@/%@ 次" = "Last %@ min: %@ · Priced %@/%@ calls";
+
+"当前会话：%@ · 估价覆盖 %@/%@ 次" = "Current chat: %@ · Priced %@/%@ calls";
+
+"正在读取费用用量…" = "Reading recent cost data…";
+
+"最近 %@ 分钟没有计入的调用" = "No included calls in the last %@ min";
+
+"部分日志不完整，费用速度可能偏低。" = "Some logs are incomplete; the spending rate may be understated.";
+
+"按最近 %@ 分钟的已记录花费外推，包含输入、输出、缓存及日志中的 Fast 设置。等待和工具时间也计入窗口。假设后续使用强度相同；API 等价估算，不代表实际账单。" = "Projects the last %@ minutes of recorded costs, including input, output, cache, and logged Fast settings. Waiting and tool time stay in the window. Assumes the same future activity; API-equivalent estimate, not an actual bill.";
+
+"价格快照：%@" = "Price snapshot: %@";

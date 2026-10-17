@@ -6,6 +6,8 @@ The app uses coalesced file-system notifications plus recovery polling. It keeps
 
 The implementation caches localization bundles, unchanged database display names, and per-refresh aggregation. Database and WAL changes invalidate title results; generated tests cover renames and database-version changes. Metadata-only discovery avoids timestamp parsing, date parsers are created on demand, and agents are grouped once per scan. Unchanged menu bar strings do not request a repaint. Closing a dashboard detaches its hosting view so it stops observing live updates.
 
+Hourly spending estimates reuse the incremental live reader, cache per-request priced amounts, and retain numeric cost samples for the last 15 minutes. Recent completed/archived families are also scanned for this window; choosing a shorter cost window only changes in-memory aggregation. This may add bounded startup reading for recently active files, but does not trigger a separate full daily-history scan.
+
 ## Reproduce the scanning benchmark
 
 ```sh
