@@ -207,3 +207,26 @@
 "按最近 %@ 分钟的已记录花费外推，包含输入、输出、缓存及日志中的 Fast 设置。等待和工具时间也计入窗口。假设后续使用强度相同；API 等价估算，不代表实际账单。" = "Projects the last %@ minutes of recorded costs, including input, output, cache, and logged Fast settings. Waiting and tool time stay in the window. Assumes the same future activity; API-equivalent estimate, not an actual bill.";
 
 "价格快照：%@" = "Price snapshot: %@";
+
+/* Calendar-period API cost summary */
+"API 费用汇总" = "API cost summary";
+"统计范围" = "Date range";
+"最近 30 天" = "Last 30 days";
+"本月" = "This month";
+"上月" = "Last month";
+"%@ 至 %@ · %@ 天" = "%@ to %@ · %@ days";
+"已记录部分" = "Recorded portion";
+"日均费用" = "Daily average cost";
+"历史读取中，金额会继续补全。" = "History is loading; amounts will continue to fill in.";
+"部分日志不完整，期间费用可能偏低。" = "Some logs are incomplete; period costs may be understated.";
+"当前范围内暂无已记录的调用" = "No recorded calls in this date range";
+"期间已排除 auto review：输入 %@ / 输出 %@ tok · %@ 次调用" = "Auto review excluded in range: input %@ / output %@ tok · %@ calls";
+"按模型查看费用 · %@ 种" = "Costs by model · %@ models";
+"估价覆盖 %@/%@ 次 · 输入 %@ / 输出 %@ tok" = "Priced %@/%@ calls · Input %@ / output %@ tok";
+"日均按范围内的日历天数计算，含无调用日期；今天仅计已记录部分。" = "Daily average uses all calendar days in the range, including idle days. Today includes recorded usage so far.";
+"等待历史统计" = "Waiting for history";
+"仅统计本机已记录用量；价格快照：%@，不代表实际账单。" = "Local recorded usage only. Price snapshot: %@; not an actual bill.";
+"范围内每日记录 · %@ 天" = "Daily records in range · %@ days";
+"暂无记录" = "No records";
+
+"每日 API 费用（估算）" = "Daily API cost (est.)";

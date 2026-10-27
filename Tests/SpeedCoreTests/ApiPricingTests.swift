@@ -18,6 +18,27 @@ final class ApiPricingTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(value.totalUSD), 0.735, accuracy: 1e-12)
     }
 
+    func testTerraOfficialStandardFastAndLongContextPricing() throws {
+        let request = try XCTUnwrap(ApiRequestUsage(usage()))
+        let standard = ApiPriceCatalog.estimate(model: "gpt-6.1-terra", usage: request, serviceTier: .standard)
+        XCTAssertEqual(standard.uncachedInputUSD, 0.03, accuracy: 1e-12)
+        XCTAssertEqual(standard.cachedInputUSD, 0.003, accuracy: 1e-12)
+        XCTAssertEqual(standard.cacheWriteUSD, 0.0125, accuracy: 1e-12)
+        XCTAssertEqual(standard.outputUSD, 0.025, accuracy: 1e-12)
+        XCTAssertEqual(try XCTUnwrap(standard.totalUSD), 0.0705, accuracy: 1e-12)
+        let fast = ApiPriceCatalog.estimate(model: "gpt-6.1-terra", usage: request, serviceTier: .fast)
+        XCTAssertEqual(try XCTUnwrap(fast.totalUSD), 0.141, accuracy: 1e-12)
+        let long = ApiRequestUsage(input: 272_001, cachedInput: 100_000, cacheWrite: 50_000, output: 1000)
+        let longStandard = ApiPriceCatalog.estimate(model: "gpt-6.1-terra", usage: long, serviceTier: .standard)
+        XCTAssertEqual(longStandard.longContextRequests, 1)
+        XCTAssertEqual(try XCTUnwrap(longStandard.totalUSD), 0.386502, accuracy: 1e-12)
+        let longFast = ApiPriceCatalog.estimate(model: "gpt-6.1-terra", usage: long, serviceTier: .fast)
+        XCTAssertEqual(try XCTUnwrap(longFast.totalUSD), 0.773004, accuracy: 1e-12)
+        XCTAssertNotNil(ApiPriceCatalog.price(for: "gpt-6.1-terra-2026-10-26"))
+        XCTAssertNil(ApiPriceCatalog.price(for: "gpt-6.1-terra-fast"))
+        XCTAssertNil(ApiPriceCatalog.estimate(model: "gpt-6.1-terra", usage: request, serviceTier: .unknown).totalUSD)
+    }
+
     func testSolVersionsHaveDifferentCachedInputRates() throws {
         let request = ApiRequestUsage(input: 100_000, cachedInput: 90_000, cacheWrite: 0, output: 10_000)
         XCTAssertEqual(try XCTUnwrap(ApiPriceCatalog.estimate(model: "gpt-6.1-sol", usage: request, serviceTier: .standard).totalUSD), 0.129, accuracy: 1e-12)

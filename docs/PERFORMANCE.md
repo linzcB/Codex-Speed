@@ -35,3 +35,7 @@ These are local CPU/workload measurements. Hardware power in watts and battery r
 ## Check a change
 
 Run `swift test`, compare the benchmark on the same machine, then check the app with its panel open and closed. Include a resumed old chat and a newly created subagent. Verify that file notifications, fallback polling, manual rescanning, language switching, and reopening history still produce the same totals. Avoid uploading traces that contain real session IDs, chat titles, or private paths.
+
+## Calendar-period cost summaries
+
+The 30-day / month-to-date / previous-month cards reuse the existing daily ledger. No additional scanner, timer, or persistent usage database is introduced. Rollups are cached by the daily result, selected range, and displayed local date; live speed updates do not rebuild the date/model totals. Range changes only aggregate in memory, and hidden history retains its existing paused behavior.

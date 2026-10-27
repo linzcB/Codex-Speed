@@ -56,6 +56,7 @@ public struct DailyScanResult: Sendable {
     public var totalFiles: Int
     public var message: String?
     public var timeZoneIdentifier: String
+    public var hasReadGaps = false
 }
 
 // Statistics-only request summaries. No prompt, response text, or tool output is
@@ -203,7 +204,7 @@ public final class DailyStatisticsScanner: @unchecked Sendable {
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else {
             return DailyScanResult(days: [], isLoading: false, filesRead: 0, totalFiles: 0,
-                message: L10n.text("找不到 sessions 文件夹，无法读取每日历史。"), timeZoneIdentifier: timeZone.identifier)
+                message: L10n.text("找不到 sessions 文件夹，无法读取每日历史。"), timeZoneIdentifier: timeZone.identifier, hasReadGaps: true)
         }
         let now = Date()
         if force || now.timeIntervalSince(lastDiscovery) >= 10 {
@@ -292,6 +293,7 @@ public final class DailyStatisticsScanner: @unchecked Sendable {
         if omitted > 0 { notes.append(L10n.text("有 %@ 条旧用量或缺少时间的记录无法可靠归入日期，未计入。", omitted)) }
         if legacy > 0 { notes.append(L10n.text("已计入 %@ 次可验证的旧版请求；它们没有连续输出计时，不参与均速。", legacy)) }
         return DailyScanResult(days: days, isLoading: read < files.count, filesRead: read, totalFiles: files.count,
-            message: notes.isEmpty ? nil : notes.joined(separator: "\n"), timeZoneIdentifier: timeZone.identifier)
+            message: notes.isEmpty ? nil : notes.joined(separator: "\n"), timeZoneIdentifier: timeZone.identifier,
+            hasReadGaps: warning || unfinishedLine || omitted > 0)
     }
 }

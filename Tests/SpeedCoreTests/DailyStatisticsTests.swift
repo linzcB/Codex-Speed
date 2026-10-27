@@ -73,6 +73,31 @@ final class DailyStatisticsTests: XCTestCase {
         return result
     }
 
+    func testTerraDailyAndMonthlyUsageIsPriced() throws {
+        let standard = line("event_msg", ["type": "thread_settings_applied", "thread_id": "main",
+            "thread_settings": ["service_tier": "default"]])
+        let fast = line("event_msg", ["type": "thread_settings_applied", "thread_id": "main",
+            "thread_settings": ["service_tier": "priority"]], at: 14)
+        func priced(_ id: String, at: Double) -> Data {
+            line("token_usage_record", ["thread_id": "main", "turn_id": "one", "response_id": id,
+                "usage": ["input_tokens": 100_000, "cached_input_tokens": 80_000,
+                          "cache_write_input_tokens": 0, "output_tokens": 10_000,
+                          "reasoning_output_tokens": 5_000]], at: at)
+        }
+        try write("main", metadata("main") + standard + start("one") + context("one", model: "gpt-6.1-terra")
+            + output("one", from: 1, to: 11) + priced("standard", at: 12) + fast
+            + output("one", from: 14.1, to: 14.8) + priced("fast", at: 15))
+        let result = try finish(DailyStatisticsScanner(directory: directory, timeZone: zone))
+        let day = try XCTUnwrap(result.days.first)
+        XCTAssertEqual(day.models.map(\.model), ["gpt-6.1-terra"])
+        XCTAssertEqual(day.totals.requests, 2); XCTAssertEqual(day.totals.apiCost.pricedRequests, 2)
+        XCTAssertEqual(day.totals.standardRequests, 1); XCTAssertEqual(day.totals.fastRequests, 1)
+        XCTAssertEqual(try XCTUnwrap(day.totals.apiCost.totalUSD), 0.222, accuracy: 1e-12)
+        let month = PeriodUsage(result: result, period: .thisMonth, at: base.addingTimeInterval(15))
+        XCTAssertEqual(try XCTUnwrap(month.totalUSD), 0.222, accuracy: 1e-12)
+        XCTAssertFalse(month.isPartial)
+    }
+
     func testAutoReviewFilterUsesEachRequestModelAndRestoresWithoutChangingLogs() throws {
         let tier = line("event_msg", ["type": "thread_settings_applied", "thread_id": "main",
             "thread_settings": ["service_tier": "default"]])

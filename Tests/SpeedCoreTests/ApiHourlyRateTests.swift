@@ -47,6 +47,17 @@ final class ApiHourlyRateTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(rate(log, window: .fifteenMinutes).hourlyUSD), unitCost * 4, accuracy: 1e-12)
         XCTAssertEqual(rate(log, at: now.addingTimeInterval(901)).hourlyUSD, 0)
     }
+    func testTerraCallsContributeToHourlyRateWithRecordedTier() throws {
+        let log = reader()
+        log.ingest(request("terra-standard", model: "gpt-6.1-terra", tier: "standard", ago: 20)
+            + request("terra-fast", model: "gpt-6.1-terra", tier: "fast", ago: 10))
+        let total = rate(log)
+        XCTAssertEqual(total.requests, 2); XCTAssertEqual(total.cost.pricedRequests, 2)
+        XCTAssertEqual(try XCTUnwrap(total.windowUSD), 0.222, accuracy: 1e-12)
+        XCTAssertEqual(try XCTUnwrap(total.hourlyUSD), 2.664, accuracy: 1e-12)
+        XCTAssertFalse(total.isPartial)
+    }
+
     func testBoundaryFutureAndOldSamplesDoNotInflateTheWindow() throws {
         let log = reader()
         log.ingest(request("boundary", ago: 300) + request("older", ago: 301)

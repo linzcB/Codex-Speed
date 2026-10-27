@@ -312,9 +312,24 @@ struct CodexSpeedMain {
                 }
                 return row
             }
+            let periodIndex = arguments.firstIndex(of: "--period")
+            let chosenPeriod = periodIndex.flatMap { $0 + 1 < arguments.count ? HistoryPeriod(rawValue: arguments[$0 + 1]) : nil } ?? .last30Days
+            let period = PeriodUsage(result: result, period: chosenPeriod, at: Date())
+            var periodReport = totals(period.totals)
+            periodReport["range"] = chosenPeriod.rawValue
+            periodReport["start_date"] = period.startDay; periodReport["end_date"] = period.endDay
+            periodReport["calendar_days"] = period.dayCount
+            periodReport["total_usd"] = period.totalUSD as Any? ?? NSNull()
+            periodReport["daily_average_usd"] = period.dailyAverageUSD as Any? ?? NSNull()
+            periodReport["partial"] = period.isPartial
+            periodReport["excluded_auto_review"] = totals(period.excludedAutoReview)
+            periodReport["models"] = period.models.map { model -> [String: Any] in
+                var row = totals(model.totals); row["model"] = model.model; return row
+            }
             let report: [String: Any] = ["timezone": result.timeZoneIdentifier,
                 "include_subagents": include, "is_loading": result.isLoading,
-                "include_auto_review": includeReview,
+                "include_auto_review": includeReview, "has_read_gaps": result.hasReadGaps,
+                "period_summary": periodReport,
                 "files_read": result.filesRead, "total_files": result.totalFiles,
                 "message": result.message as Any? ?? NSNull(), "days": days,
                 "price_checked_date": ApiPriceCatalog.checkedDate,
@@ -438,8 +453,8 @@ struct CodexSpeedMain {
         if CommandLine.arguments.contains("--preview-daily") {
             monitor.showDailyHistory = true
             let scanner = DailyStatisticsScanner(directory: monitor.folder)
-            var history = scanner.scan(includeAutoReview: monitor.includeAutoReview, force: true)
-            for _ in 0..<1000 where history.isLoading { history = scanner.scan(includeAutoReview: monitor.includeAutoReview) }
+            var history = scanner.scan(includeSubagents: monitor.includeSubagents, includeAutoReview: monitor.includeAutoReview, force: true)
+            for _ in 0..<1000 where history.isLoading { history = scanner.scan(includeSubagents: monitor.includeSubagents, includeAutoReview: monitor.includeAutoReview) }
             monitor.dailyResult = history
         }
         let content = Dashboard(monitor: monitor, onPin: {})

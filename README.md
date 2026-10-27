@@ -35,6 +35,7 @@
 | **Subagent activity** | Count active subagents, inspect their individual speeds, and choose whether they contribute to totals. |
 | **Daily history** | Input, output, reasoning, cache hit rates, models, and time-weighted output speed, including archived local chats. |
 | **Hourly spending pace** | Global and selected-chat USD/hour estimates from a 1, 5, or 15 minute lookback, with priced-call coverage. |
+| **Monthly cost totals** | Last 30 days, month to date, or last month; totals, daily average, model costs, and daily records. |
 | **API cost estimates** | Standard/Fast estimates with pricing coverage and unknown modes shown explicitly. |
 | **A native workflow** | A pinnable floating sidebar, CSV export, custom log folders, and instant English / 简体中文 switching. |
 

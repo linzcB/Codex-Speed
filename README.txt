@@ -1,4 +1,4 @@
-Codex Speed 1.1.5
+Codex Speed 1.1.6
 ==============
 
 一个原生 macOS 菜单栏工具，用于监测本机 Codex 会话的平均输出速度。
@@ -18,6 +18,17 @@ Codex Speed 1.1.5
 如需长期使用，可以将 app 拖入“应用程序”后再打开。
 本地构建使用临时签名，没有 Apple Developer ID 或 Apple 公证。
 
+
+1.1.6：近一个月 API 费用
+-----------------------
+在“每日历史”查看 API 费用汇总，可选择最近 30 天、本月、上月，并记住范围。
+所选日期的每日费用显示在月度费用汇总上方，并标出日期。
+显示期间总费用、日均、输入/输出 token、按模型费用与估价覆盖，范围内每日记录可展开并点击查看。
+最近 30 天包含今天和此前 29 个本地日历日；本月从 1 日到今天，上月为完整自然月。
+范围使用历史统计页的时区，跨月、跨年和夏令时均按日历处理；日均包含无调用日期。
+复用每日历史和同一价格快照；输入、输出、缓存、Fast 以及子 agent/auto review 开关均保持一致。
+读取中、日志缺口和未定价用量明确标注；仅统计本机已记录用量，不代表实际账单。
+范围切换仅在内存汇总，不新增日志扫描；历史面板关闭时仍暂停扫描。
 
 1.1.5：预计每小时 API 费用
 -------------------------
@@ -82,9 +93,9 @@ Fast 参考：https://developers.openai.com/api/docs/guides/fast-mode
 1.0.8：API 等价费用估算
 ----------------------
 每日历史新增当日与各模型的 API 等价费用（美元），历史日期列表也显示费用。
-按 2026-10-15 核对的 OpenAI Standard 基价及 Fast 倍数回算历史，不代表 ChatGPT/Codex 订阅实际扣款。
+按 2026-10-27 核对的 OpenAI Standard 基价及 Fast 倍数回算历史，不代表 ChatGPT/Codex 订阅实际扣款。
 仅估算模型 token 费用；未加入工具单独收费、税费和地区调整。其他服务模式暂不估价。
-当前价格表包含 gpt-6-astra、gpt-6.1-sol、gpt-6-sol、gpt-6-luna，面板可展开查看官方价格链接。
+当前价格表包含 gpt-6-astra、gpt-6.1-sol、gpt-6.1-terra、gpt-6-sol、gpt-6-luna，面板可展开查看官方价格链接。
 
 每次请求分别计算：
 未缓存输入 = 输入总量 - 缓存读取 - 缓存写入。
@@ -103,6 +114,7 @@ https://developers.openai.com/api/docs/pricing
 https://developers.openai.com/api/docs/guides/prompt-caching
 https://developers.openai.com/api/docs/models/gpt-6-astra
 https://developers.openai.com/api/docs/models/gpt-6.1-sol
+https://developers.openai.com/api/docs/models/gpt-6.1-terra
 https://developers.openai.com/api/docs/models/gpt-6-sol
 
 1.0.7：每日统计与历史记录

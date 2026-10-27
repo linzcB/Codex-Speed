@@ -33,6 +33,8 @@ API-equivalent estimates use the supported price catalog and each request's reco
 
 The latest settings do not retrospectively reprice older calls. Logged settings do not prove the actual server tier or whether a Fast request was downgraded. Estimates do not represent subscription charges or confirmed API bills. The catalog's date and official pricing links appear in the app.
 
+GPT-6.1 Terra (`gpt-6.1-terra`) is included using its [official Standard text-token prices](https://developers.openai.com/api/docs/models/gpt-6.1-terra), checked 2026-10-27: $1 input, $0.05 cached input, $1.25 cache writes, and $5 output per million tokens. Fast doubles these rates; requests over 272,000 input tokens use the documented long-context adjustment. Cache writes use the published 30-minute retention rate; the logs do not establish a 12-hour rate.
+
 ## Coverage
 
 The app reads local logs. Cloud-only and unavailable remote logs cannot be reconstructed from chat text or the workspace folder. Initial scans and incomplete records can temporarily reduce coverage; the UI reports those conditions.
@@ -56,3 +58,13 @@ The denominator is the full wall-clock window, including waits and tools. Comple
 Usage is assigned to its recorded completion timestamp. An unfinished request does not contribute until its usage record arrives, so rates can update in steps. Events outside `(now − window, now]` are excluded. A complete window with no calls shows zero; calls with no supported price, mode, or cache breakdown remain unpriced rather than free. The UI shows priced coverage, waits for ongoing log reads, and marks known read gaps as partial. Cloud-only logs remain unavailable.
 
 Only numeric summaries for the recent 15-minute range are retained for this feature and expired during scans. It reuses the live incremental reader; opening the live panel does not start a separate full daily-history scan. The output-speed metric does not change this spending denominator.
+
+## Calendar-period cost totals
+
+Daily history summarizes **last 30 days**, **this month**, or **last month**, and remembers the selected range. Last 30 days includes today and the preceding 29 calendar dates; this month runs from the first through today; last month is the complete previous calendar month. The history time zone determines boundaries, including year changes, leap years, and daylight saving. Future dates are excluded.
+
+The total adds existing daily request costs, with the same cache, Standard/Fast, model pricing, archive deduplication, and aggregation filters. Models and excluded auto review usage are aggregated over the same dates. Daily average divides the known total by every calendar date in the range, including dates with no recorded calls. Today is partial until it ends.
+
+Unknown prices remain unpriced. Loading and numeric read-gap flags mark totals as partial; an incomplete empty range shows no amount, while a completely read empty range shows zero recorded cost. A missing date in the daily list is labeled **No records**. Informational legacy timing notes alone do not make the cost incomplete. The dated price snapshot is reused; this is API-equivalent usage, not a confirmed historical bill. Cloud-only logs remain unavailable.
+
+This rollup performs no I/O. It is cached until daily data, the selected range, or the local date changes. Switching ranges uses the same in-memory daily ledger; it does not restart a scan or add background work while history is hidden.

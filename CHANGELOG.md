@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.6 — 2026-10-27
+
+- Add GPT-6.1 Terra pricing for Standard and Fast, including supported long-context rates.
+
+- Place the selected day’s API cost above the calendar-period cost summary and show its date.
+
+- Add API cost totals for the last 30 calendar days, month to date, and the previous calendar month, with a remembered range.
+- Show daily average, input/output tokens, model costs, pricing coverage, and daily records for the selected range.
+- Reuse the daily ledger, time zone, archive deduplication, and subagent/auto review filters without an extra log scan.
+- Keep loading and read gaps distinct from unpriced requests and empty periods; cache period summaries independently of live speed updates.
+
 ## 1.1.5 — 2026-10-17
 
 - Estimate hourly API-equivalent spending for all local chats and the current chat from a rolling 1, 5, or 15 minute wall-clock window; default to 5 minutes.

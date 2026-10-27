@@ -22,7 +22,8 @@ final class Monitor: ObservableObject {
     @Published var includeAutoReview = false { didSet { invalidateStatistics() } }
     @Published var showDailyHistory = false
     @Published var dailySelectedDay = "today"
-    @Published var dailyResult: DailyScanResult?
+    @Published var dailyResult: DailyScanResult? { didSet { cachedPeriodUsage = nil } }
+    @Published var historyPeriod = HistoryPeriod.last30Days { didSet { cachedPeriodUsage = nil } }
     @Published var language = L10n.preference {
         didSet {
             guard language != oldValue else { return }
@@ -58,6 +59,7 @@ final class Monitor: ObservableObject {
     private var cachedCountedAgents: [AgentSnapshot]?
     private var cachedGlobalCost: ApiHourlyRate?
     private var cachedCurrentCost: ApiHourlyRate?
+    private var cachedPeriodUsage: PeriodUsage?
     private let dayFormatter: DateFormatter = {
         let value = DateFormatter()
         value.calendar = Calendar(identifier: .gregorian)
@@ -83,6 +85,7 @@ final class Monitor: ObservableObject {
         includeSubagents = UserDefaults.standard.object(forKey: "includeSubagents") as? Bool ?? true
         includeAutoReview = UserDefaults.standard.bool(forKey: "includeAutoReview")
         costWindow = ApiCostWindow(rawValue: UserDefaults.standard.integer(forKey: "costWindowSeconds")) ?? .fiveMinutes
+        historyPeriod = HistoryPeriod(rawValue: UserDefaults.standard.string(forKey: "historyPeriod") ?? "") ?? .last30Days
         // Adopt the requested output-only default once when upgrading. Further
         // launches keep the user's explicit choice among the three modes.
         if UserDefaults.standard.bool(forKey: "outputTimingDefaultApplied") {
@@ -286,6 +289,16 @@ final class Monitor: ObservableObject {
     var todayKey: String {
         dayFormatter.timeZone = TimeZone(identifier: dailyResult?.timeZoneIdentifier ?? TimeZone.current.identifier) ?? .current
         return dayFormatter.string(from: now)
+    }
+    var periodUsage: PeriodUsage? {
+        guard let dailyResult else { return nil }
+        if let cachedPeriodUsage, cachedPeriodUsage.referenceDay == todayKey { return cachedPeriodUsage }
+        let value = PeriodUsage(result: dailyResult, period: historyPeriod, at: now)
+        cachedPeriodUsage = value
+        return value
+    }
+    func historyPeriodChanged() {
+        UserDefaults.standard.set(historyPeriod.rawValue, forKey: "historyPeriod")
     }
     var selectedDailyUsage: DailyUsage? {
         dailyResult?.days.first { $0.day == (dailySelectedDay == "today" ? todayKey : dailySelectedDay) }

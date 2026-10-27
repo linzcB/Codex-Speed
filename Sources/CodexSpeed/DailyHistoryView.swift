@@ -9,6 +9,7 @@ struct DailyHistoryView: View {
     @State private var showDates = false
 
     private var days: [DailyUsage] { monitor.dailyResult?.days ?? [] }
+    private var periodDays: [DailyUsage] { monitor.periodUsage?.days ?? [] }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -50,10 +51,16 @@ struct DailyHistoryView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if !days.isEmpty {
-                DisclosureGroup(L10n.text("历史记录 · %@ 天", days.count), isExpanded: $showDates) {
+            if let day = monitor.selectedDailyUsage, day.totals.requests > 0 {
+                costSummary(day.totals, date: day.day)
+            }
+
+            PeriodHistoryView(monitor: monitor, accent: accent)
+
+            if !periodDays.isEmpty {
+                DisclosureGroup(L10n.text("范围内每日记录 · %@ 天", periodDays.count), isExpanded: $showDates) {
                     VStack(spacing: 10) {
-                        ForEach(days) { day in
+                        ForEach(periodDays) { day in
                             Button {
                                 monitor.dailySelectedDay = day.day == monitor.todayKey ? "today" : day.day
                                 showDates = false
@@ -72,7 +79,7 @@ struct DailyHistoryView: View {
                                     HStack {
                                         Text(L10n.text("API 估算（USD）"))
                                         Spacer()
-                                        Text("\(money(day.totals.apiCost.totalUSD))\(day.totals.apiCost.pricedRequests < day.totals.requests ? L10n.text(" · 部分") : "")")
+                                        Text(day.totals.requests == 0 ? L10n.text("暂无记录") : "\(money(day.totals.apiCost.totalUSD))\(day.totals.apiCost.pricedRequests < day.totals.requests ? L10n.text(" · 部分") : "")")
                                     }.font(.system(size: 10)).foregroundStyle(accent)
                                 }.contentShape(Rectangle())
                             }.buttonStyle(.plain)
@@ -89,7 +96,6 @@ struct DailyHistoryView: View {
                 }
                 summary(day.totals)
                 if day.totals.requests > 0 {
-                    costSummary(day.totals)
                     Divider()
                     Text(L10n.text("使用模型 · %@ 种", day.models.count))
                         .font(.system(size: 12, weight: .semibold))
@@ -146,9 +152,13 @@ struct DailyHistoryView: View {
             .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
     }
 
-    private func costSummary(_ totals: DailyTotals) -> some View {
+    private func costSummary(_ totals: DailyTotals, date: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(L10n.text("API 等价费用（估算）")).font(.system(size: 12, weight: .semibold))
+            HStack(alignment: .firstTextBaseline) {
+                Text(L10n.text("每日 API 费用（估算）")).font(.system(size: 12, weight: .semibold))
+                Spacer(minLength: 4)
+                Text(date).font(.system(size: 10)).foregroundStyle(.secondary)
+            }
             HStack(alignment: .firstTextBaseline) {
                 Text(money(totals.apiCost.totalUSD))
                     .font(.system(size: 27, weight: .medium, design: .rounded)).monospacedDigit()

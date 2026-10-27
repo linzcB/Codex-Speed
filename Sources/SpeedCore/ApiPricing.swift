@@ -86,12 +86,13 @@ public struct ApiCostTotals: Sendable, Equatable {
 }
 
 public enum ApiPriceCatalog {
-    public static let checkedDate = "2026-10-15"
+    public static let checkedDate = "2026-10-27"
     public static let sourceURL = URL(string: "https://developers.openai.com/api/docs/pricing")!
     public static let longContextThreshold = 272_000
     public static let prices: [ApiModelPrice] = [
         ApiModelPrice(model: "gpt-6-astra", input: 10, cachedInput: 1, cacheWrite: 12.5, output: 50),
         ApiModelPrice(model: "gpt-6.1-sol", input: 2, cachedInput: 0.1, cacheWrite: 2.5, output: 10),
+        ApiModelPrice(model: "gpt-6.1-terra", input: 1, cachedInput: 0.05, cacheWrite: 1.25, output: 5),
         ApiModelPrice(model: "gpt-6-sol", input: 2, cachedInput: 0.2, cacheWrite: 2.5, output: 10),
         ApiModelPrice(model: "gpt-6-luna", input: 0.1, cachedInput: 0.01, cacheWrite: 0.125, output: 0.5)
     ]
