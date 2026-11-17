@@ -18,11 +18,11 @@ public struct ApiCostSample: Sendable {
     public init(id: String, timestamp: Date, model: String, usage: ApiRequestUsage?, serviceTier: ApiServiceTier) {
         self.id = id; self.timestamp = timestamp; self.model = model
         self.usage = usage; self.serviceTier = serviceTier
-        cost = ApiPriceCatalog.estimate(model: model, usage: usage, serviceTier: serviceTier)
+        cost = ApiPriceCatalog.estimate(model: model, usage: usage, serviceTier: serviceTier, at: timestamp)
     }
     mutating func resolveModel(_ model: String) {
         self.model = model
-        cost = ApiPriceCatalog.estimate(model: model, usage: usage, serviceTier: serviceTier)
+        cost = ApiPriceCatalog.estimate(model: model, usage: usage, serviceTier: serviceTier, at: timestamp)
     }
 }
 

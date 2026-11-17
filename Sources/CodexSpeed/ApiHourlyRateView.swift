@@ -51,7 +51,7 @@ struct ApiHourlyRateView: View {
                     Text(L10n.text("部分日志不完整，费用速度可能偏低。")).foregroundStyle(.orange)
                 }
             }
-            Text(L10n.text("按最近 %@ 分钟的已记录花费外推，包含输入、输出、缓存及日志中的 Fast 设置。等待和工具时间也计入窗口。假设后续使用强度相同；API 等价估算，不代表实际账单。", monitor.costWindow.minutes))
+            Text(L10n.text("根据最近 %@ 分钟的记录估算每小时 API 等价费用，计入输入、输出和缓存，按日志中的模式计价。观察窗口包含等待和工具时间。", monitor.costWindow.minutes))
                 .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Text(L10n.text("价格快照：%@", ApiPriceCatalog.checkedDate)).foregroundStyle(.secondary)

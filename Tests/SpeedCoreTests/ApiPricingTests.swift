@@ -39,6 +39,42 @@ final class ApiPricingTests: XCTestCase {
         XCTAssertNil(ApiPriceCatalog.estimate(model: "gpt-6.1-terra", usage: request, serviceTier: .unknown).totalUSD)
     }
 
+    func testGPT62PricesIncludeModelSpecificCacheRates() throws {
+        let request = try XCTUnwrap(ApiRequestUsage(usage()))
+        let astra = ApiPriceCatalog.estimate(model: "gpt-6.2-astra", usage: request, serviceTier: .standard)
+        XCTAssertEqual(astra.uncachedInputUSD, 0.24, accuracy: 1e-12)
+        XCTAssertEqual(astra.cachedInputUSD, 0.024, accuracy: 1e-12)
+        XCTAssertEqual(astra.cacheWriteUSD, 0.1, accuracy: 1e-12)
+        XCTAssertEqual(astra.outputUSD, 0.2, accuracy: 1e-12)
+        let sol = ApiPriceCatalog.estimate(model: "gpt-6.2-sol", usage: request, serviceTier: .fast)
+        XCTAssertEqual(try XCTUnwrap(sol.totalUSD), 0.282, accuracy: 1e-12)
+    }
+
+    func testGPT62UltrafastUsesOriginalTimestampAcrossPacificPriceCutoff() throws {
+        let cutoff = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-03-01T08:00:00Z"))
+        let before = cutoff.addingTimeInterval(-1)
+        let model = "gpt-6.2-astra"
+        let request = try XCTUnwrap(ApiRequestUsage(usage(300_000, cached: 100_000, writes: 50_000, output: 10_000)))
+        let stats = DailyLogStatistics(timeZone: TimeZone(secondsFromGMT: 0)!)
+        for (id, timestamp) in [("promo", before), ("list", cutoff)] {
+            stats.recordModern(responseID: id, turnID: "turn", timestamp: timestamp, model: "未知模型",
+                               usageJSON: usage(300_000, cached: 100_000, writes: 50_000, output: 10_000),
+                               outputSeconds: nil, serviceTier: .ultrafast)
+        }
+        stats.setModel(model, for: "turn")
+        let total = try XCTUnwrap(stats.buckets["2027-03-01"]?[model])
+        XCTAssertEqual(total.ultrafastRequests, 2)
+        XCTAssertEqual(total.apiCost.longContextRequests, 2)
+        XCTAssertEqual(try XCTUnwrap(total.apiCost.totalUSD), 36.72, accuracy: 1e-12)
+
+        var sample = ApiCostSample(id: "promo", timestamp: before, model: "未知模型", usage: request, serviceTier: .ultrafast)
+        sample.resolveModel(model)
+        XCTAssertEqual(try XCTUnwrap(sample.cost.totalUSD), 12.24, accuracy: 1e-12)
+        XCTAssertNil(ApiPriceCatalog.estimate(model: model, usage: request, serviceTier: .ultrafast).totalUSD)
+        XCTAssertNil(ApiPriceCatalog.estimate(model: "gpt-6.1-terra", usage: request, serviceTier: .ultrafast, at: before).totalUSD)
+        XCTAssertEqual(try XCTUnwrap(ApiPriceCatalog.estimate(model: "gpt-6.1-sol", usage: request, serviceTier: .ultrafast).totalUSD), 6.12, accuracy: 1e-12)
+    }
+
     func testSolVersionsHaveDifferentCachedInputRates() throws {
         let request = ApiRequestUsage(input: 100_000, cachedInput: 90_000, cacheWrite: 0, output: 10_000)
         XCTAssertEqual(try XCTUnwrap(ApiPriceCatalog.estimate(model: "gpt-6.1-sol", usage: request, serviceTier: .standard).totalUSD), 0.129, accuracy: 1e-12)

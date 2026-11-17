@@ -294,6 +294,7 @@ struct CodexSpeedMain {
                  "cache_known_input_tokens": t.cacheKnownInputTokens, "requests": t.requests,
                  "cache_known_requests": t.cacheKnownRequests, "timed_requests": t.timedRequests,
                  "standard_requests": t.standardRequests, "fast_requests": t.fastRequests,
+                 "ultrafast_requests": t.ultrafastRequests,
                  "unknown_tier_requests": t.unknownTierRequests,
                  "timed_output_tokens": t.timedOutputTokens, "output_seconds": t.outputSeconds,
                  "average_speed": t.averageSpeed as Any? ?? NSNull(),
@@ -333,7 +334,7 @@ struct CodexSpeedMain {
                 "files_read": result.filesRead, "total_files": result.totalFiles,
                 "message": result.message as Any? ?? NSNull(), "days": days,
                 "price_checked_date": ApiPriceCatalog.checkedDate,
-                "price_mode": "API equivalent USD by logged Standard/Fast setting; actual tier unverified"]
+                "price_mode": "API equivalent USD by logged speed setting; actual tier unverified"]
             let json = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
             print(json.flatMap { String(data: $0, encoding: .utf8) } ?? "{}")
             return

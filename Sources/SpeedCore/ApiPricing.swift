@@ -1,12 +1,13 @@
 import Foundation
 
 public enum ApiServiceTier: String, Sendable {
-    case standard, fast, unknown
+    case standard, fast, ultrafast, unknown
 
     public init(recordedValue: String?) {
         switch recordedValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "default", "standard": self = .standard
         case "fast", "priority": self = .fast
+        case "ultrafast": self = .ultrafast
         default: self = .unknown
         }
     }
@@ -14,14 +15,8 @@ public enum ApiServiceTier: String, Sendable {
         switch self {
         case .standard: return "Standard"
         case .fast: return "Fast"
+        case .ultrafast: return "Ultrafast"
         case .unknown: return L10n.text("未知模式")
-        }
-    }
-    var priceMultiplier: Double? {
-        switch self {
-        case .standard: return 1
-        case .fast: return 2
-        case .unknown: return nil
         }
     }
 }
@@ -86,10 +81,14 @@ public struct ApiCostTotals: Sendable, Equatable {
 }
 
 public enum ApiPriceCatalog {
-    public static let checkedDate = "2026-10-27"
+    public static let checkedDate = "2026-11-18"
     public static let sourceURL = URL(string: "https://developers.openai.com/api/docs/pricing")!
     public static let longContextThreshold = 272_000
+    // March 1, 2027 at midnight Pacific Standard Time.
+    private static let gpt62UltrafastListRateStart = Date(timeIntervalSince1970: 1_803_888_000)
     public static let prices: [ApiModelPrice] = [
+        ApiModelPrice(model: "gpt-6.2-astra", input: 8, cachedInput: 0.4, cacheWrite: 10, output: 40),
+        ApiModelPrice(model: "gpt-6.2-sol", input: 2, cachedInput: 0.1, cacheWrite: 2.5, output: 10),
         ApiModelPrice(model: "gpt-6-astra", input: 10, cachedInput: 1, cacheWrite: 12.5, output: 50),
         ApiModelPrice(model: "gpt-6.1-sol", input: 2, cachedInput: 0.1, cacheWrite: 2.5, output: 10),
         ApiModelPrice(model: "gpt-6.1-terra", input: 1, cachedInput: 0.05, cacheWrite: 1.25, output: 5),
@@ -106,8 +105,26 @@ public enum ApiPriceCatalog {
         }
     }
 
-    public static func estimate(model: String, usage: ApiRequestUsage?, serviceTier: ApiServiceTier) -> ApiCostTotals {
-        guard let usage, let price = price(for: model), let tierMultiplier = serviceTier.priceMultiplier,
+    private static func multiplier(for tier: ApiServiceTier, model: String, at timestamp: Date?) -> Double? {
+        switch tier {
+        case .standard: return 1
+        case .fast: return 2
+        case .unknown: return nil
+        case .ultrafast:
+            switch model {
+            case "gpt-6.2-astra", "gpt-6.2-sol":
+                guard let timestamp, timestamp.timeIntervalSince1970.isFinite else { return nil }
+                return timestamp < gpt62UltrafastListRateStart ? 3 : 6
+            case "gpt-6-astra", "gpt-6.1-sol": return 6
+            default: return nil
+            }
+        }
+    }
+
+    public static func estimate(model: String, usage: ApiRequestUsage?, serviceTier: ApiServiceTier,
+                                at timestamp: Date? = nil) -> ApiCostTotals {
+        guard let usage, let price = price(for: model),
+              let tierMultiplier = multiplier(for: serviceTier, model: price.model, at: timestamp),
               usage.input >= 0, usage.output >= 0, usage.cachedInput >= 0, usage.cacheWrite >= 0,
               usage.cachedInput <= usage.input, usage.cacheWrite <= usage.input - usage.cachedInput else {
             return ApiCostTotals()

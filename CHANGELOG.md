@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.7 — 2026-11-18
+
+- Add GPT-6.2 Sol and Astra to hourly, daily, and monthly API cost estimates.
+- Estimate logged Ultrafast requests using the request date, including the GPT-6.2 promotional rate.
+
 ## 1.1.6 — 2026-10-27
 
 - Add GPT-6.1 Terra pricing for Standard and Fast, including supported long-context rates.

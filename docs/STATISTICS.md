@@ -29,9 +29,11 @@ Calls are assigned to the date of their usage record in the displayed local time
 
 ## Cost estimates
 
-API-equivalent estimates use the supported price catalog and each request's recorded Standard/Fast setting, including supported long-context adjustments. Each agent's own settings are used. Unknown modes, unsupported models, and incomplete pricing data remain unpriced; the UI shows the priced portion and coverage.
+API-equivalent estimates use the supported price catalog and each request's recorded speed setting, including supported long-context adjustments. Each agent's own settings are used. Unknown modes, unsupported models, and incomplete pricing data remain unpriced; the UI shows the priced portion and coverage.
 
 The latest settings do not retrospectively reprice older calls. Logged settings do not prove the actual server tier or whether a Fast request was downgraded. Estimates do not represent subscription charges or confirmed API bills. The catalog's date and official pricing links appear in the app.
+
+GPT-6.2 Sol and Astra use the official Standard, Fast, and Ultrafast text token rates, including the long-context adjustment. GPT-6.2 Ultrafast is 3× Standard before March 1, 2027 Pacific time and 6× from that date. Estimates use the original usage timestamp. Cache writes assume 30-minute retention. [OpenAI API pricing](https://developers.openai.com/api/docs/pricing)
 
 GPT-6.1 Terra (`gpt-6.1-terra`) is included using its [official Standard text-token prices](https://developers.openai.com/api/docs/models/gpt-6.1-terra), checked 2026-10-27: $1 input, $0.05 cached input, $1.25 cache writes, and $5 output per million tokens. Fast doubles these rates; requests over 272,000 input tokens use the documented long-context adjustment. Cache writes use the published 30-minute retention rate; the logs do not establish a 12-hour rate.
 
@@ -51,7 +53,7 @@ The subagent toggle remains independent. The app does not modify logs. Missing l
 
 ## Hourly spending pace
 
-The live panel projects **included request costs in the last N minutes ÷ (N × 60) × 3600**, in USD/hour. N is 1, 5, or 15 minutes (default 5, remembered). This uses the existing dated price catalog, including input, cache reads/writes, output, and recorded Standard/Fast settings. It is a recent usage-rate estimate assuming the same future activity, not a confirmed bill.
+The live panel projects **included request costs in the last N minutes ÷ (N × 60) × 3600**, in USD/hour. N is 1, 5, or 15 minutes (default 5, remembered). This uses the existing dated price catalog, including input, cache reads/writes, output, and recorded speed settings. It is a recent usage-rate estimate assuming the same future activity, not a confirmed bill.
 
 The denominator is the full wall-clock window, including waits and tools. Completed and archived local chats still contribute while their requests remain in the window, even if they are absent from the live chat picker. The global estimate adds unique threads; the current-chat estimate includes its owned subagents when enabled. Both existing aggregation switches apply per request.
 
@@ -63,7 +65,7 @@ Only numeric summaries for the recent 15-minute range are retained for this feat
 
 Daily history summarizes **last 30 days**, **this month**, or **last month**, and remembers the selected range. Last 30 days includes today and the preceding 29 calendar dates; this month runs from the first through today; last month is the complete previous calendar month. The history time zone determines boundaries, including year changes, leap years, and daylight saving. Future dates are excluded.
 
-The total adds existing daily request costs, with the same cache, Standard/Fast, model pricing, archive deduplication, and aggregation filters. Models and excluded auto review usage are aggregated over the same dates. Daily average divides the known total by every calendar date in the range, including dates with no recorded calls. Today is partial until it ends.
+The total adds existing daily request costs, with the same cache rates, speed settings, model pricing, archive deduplication, and aggregation filters. Models and excluded auto review usage are aggregated over the same dates. Daily average divides the known total by every calendar date in the range, including dates with no recorded calls. Today is partial until it ends.
 
 Unknown prices remain unpriced. Loading and numeric read-gap flags mark totals as partial; an incomplete empty range shows no amount, while a completely read empty range shows zero recorded cost. A missing date in the daily list is labeled **No records**. Informational legacy timing notes alone do not make the cost incomplete. The dated price snapshot is reused; this is API-equivalent usage, not a confirmed historical bill. Cloud-only logs remain unavailable.
 

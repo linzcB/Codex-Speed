@@ -11,6 +11,7 @@ public struct DailyTotals: Sendable, Equatable {
     public var timedRequests = 0
     public var standardRequests = 0
     public var fastRequests = 0
+    public var ultrafastRequests = 0
     public var unknownTierRequests = 0
     public var timedOutputTokens = 0
     public var outputSeconds: Double = 0
@@ -27,6 +28,7 @@ public struct DailyTotals: Sendable, Equatable {
         reasoningTokens += sign * other.reasoningTokens; cachedInputTokens += sign * other.cachedInputTokens
         cacheKnownInputTokens += sign * other.cacheKnownInputTokens; requests += sign * other.requests
         standardRequests += sign * other.standardRequests; fastRequests += sign * other.fastRequests
+        ultrafastRequests += sign * other.ultrafastRequests
         unknownTierRequests += sign * other.unknownTierRequests
         cacheKnownRequests += sign * other.cacheKnownRequests; timedRequests += sign * other.timedRequests
         timedOutputTokens += sign * other.timedOutputTokens; outputSeconds += Double(sign) * other.outputSeconds
@@ -64,6 +66,7 @@ public struct DailyScanResult: Sendable {
 final class DailyLogStatistics {
     struct Request {
         var day: String
+        var timestamp: Date
         var model: String
         var totals: DailyTotals
         var pricingUsage: ApiRequestUsage?
@@ -110,7 +113,8 @@ final class DailyLogStatistics {
         for key in pendingModelByTurn.removeValue(forKey: turnID) ?? [] {
             guard var record = records[key] else { continue }
             apply(record, sign: -1); record.model = model
-            record.totals.apiCost = ApiPriceCatalog.estimate(model: model, usage: record.pricingUsage, serviceTier: record.serviceTier)
+            record.totals.apiCost = ApiPriceCatalog.estimate(model: model, usage: record.pricingUsage,
+                                                            serviceTier: record.serviceTier, at: record.timestamp)
             records[key] = record; apply(record, sign: 1)
         }
     }
@@ -124,6 +128,7 @@ final class DailyLogStatistics {
         switch serviceTier {
         case .standard: totals.standardRequests = 1
         case .fast: totals.fastRequests = 1
+        case .ultrafast: totals.ultrafastRequests = 1
         case .unknown: totals.unknownTierRequests = 1
         }
         if let number = (usageJSON["cached_input_tokens"] ?? usageJSON["input_cached_tokens"]) as? NSNumber,
@@ -136,8 +141,9 @@ final class DailyLogStatistics {
         }
         let requestModel = modelByTurn[turnID] ?? "未知模型"
         let pricingUsage = ApiRequestUsage(usageJSON)
-        totals.apiCost = ApiPriceCatalog.estimate(model: requestModel, usage: pricingUsage, serviceTier: serviceTier)
-        let record = Request(day: dayFormatter.string(from: timestamp), model: requestModel, totals: totals, pricingUsage: pricingUsage, serviceTier: serviceTier)
+        totals.apiCost = ApiPriceCatalog.estimate(model: requestModel, usage: pricingUsage, serviceTier: serviceTier, at: timestamp)
+        let record = Request(day: dayFormatter.string(from: timestamp), timestamp: timestamp, model: requestModel,
+                             totals: totals, pricingUsage: pricingUsage, serviceTier: serviceTier)
         records[key] = record; apply(record, sign: 1)
         if modelByTurn[turnID] == nil { pendingModelByTurn[turnID, default: []].insert(key) }
     }

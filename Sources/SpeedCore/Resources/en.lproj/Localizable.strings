@@ -17,9 +17,9 @@
 "API 等价费用（估算）" = "API-equivalent cost (est.)";
 "Codex Speed 速度监测" = "Codex Speed monitor";
 "Codex 在整轮结束时记录的 time_to_first_token；可能是推理输出，与首字延迟不同。" = "Codex logs time_to_first_token when a turn ends. This may refer to reasoning, so it can differ from first-text latency.";
-"Standard %@ 次 · Fast %@ 次 · 未知/未支持 %@ 次" = "Standard: %@ · Fast: %@ · Unknown/unsupported: %@";
+"Standard %@ 次 · Fast %@ 次 · Ultrafast %@ 次 · 未知/未支持 %@ 次" = "Standard: %@ · Fast: %@ · Ultrafast: %@ · Unknown/unsupported: %@";
 "≈ %.2f秒" = "≈ %.2f s";
-"上表为 Standard；Fast 的输入、缓存和输出均 ×2。缺少模式或尚未支持的模式不估价。" = "The table shows Standard rates. Fast doubles input, cache, and output rates. Unknown or unsupported modes are not priced.";
+"上表为 Standard，缓存写入按 30 分钟保留价格估算。Fast 按 Standard ×2。GPT-6.2 的 Ultrafast 在太平洋时间 2027-03-01 前为 ×3，此后为 ×6。GPT-6 Astra 和 GPT-6.1 Sol 的 Ultrafast 为 ×6。" = "The table shows Standard rates with 30-minute cache writes. Fast costs 2× Standard. GPT-6.2 Ultrafast costs 3× until March 1, 2027 (Pacific time), then 6×. Ultrafast on GPT-6 Astra and GPT-6.1 Sol costs 6×.";
 "为什么看不到云端会话…" = "Why are cloud chats missing…";
 "主 agent" = "Main agent";
 "主 agent 扣工具 / 剩余" = "Main tools / Other time";
@@ -75,7 +75,7 @@
 "扣工具（估算）" = "Without tools (est.)";
 "找不到 sessions 文件夹，无法读取每日历史。" = "Sessions folder not found. Daily history cannot be read.";
 "找不到 sessions 文件夹，请选择 Codex 日志位置。" = "Sessions folder not found. Choose your Codex log folder.";
-"按日志中的模式设置估价 · %@\nFast 按 Standard ×2，另计长上下文加价。无法确认服务端降级，不代表订阅实际账单。" = "Estimated from logged mode settings · %@\nFast = Standard ×2, plus long-context rates. Server downgrades cannot be confirmed. This is not your subscription bill.";
+"按日志中的模式设置和上下文长度估价 · %@\n金额为 API 等价估算。" = "Estimated using logged speed settings and context length · %@\nAPI-equivalent estimate.";
 "按调用用量记录的日期归日，含已结束与已归档聊天。缓存命中率 = 已命中输入 ÷ 有缓存记录的输入；命中 token 已包含在输入总量中。平均速度 = 有效输出 token ÷ 对应输出时间，排除输出前等待和工具执行，含推理。" = "Usage is assigned to the date of its log record, including completed and archived chats. Cache hit rate = cached input ÷ input with cache data. Cached tokens are already included in input. Average speed = timed output tokens ÷ output time, excluding pre-output waits and tool execution, including reasoning.";
 "控制两行速度和 token 合计是否包含子 agent；明细始终可以查看。" = "Include subagents in both menu-bar speeds and token totals. Their details remain available.";
 "推理占输出 %.1f%%" = "Reasoning: %.1f%% of output";
@@ -137,7 +137,7 @@
 "语言" = "Language";
 "读取中" = "Loading";
 "读取历史中 · %@/%@ 个日志\n当前数字会继续补全" = "Reading history · %@/%@ logs\nTotals will continue to update";
-"读取该 agent 最新的 service_tier 设置，priority / fast 表示 Fast；并非服务端实际计费档位确认。缺少记录时显示未知模式。" = "This agent's latest logged service_tier setting: priority / fast means Fast. This does not confirm the server's actual billing tier. Missing records show Unknown mode.";
+"显示该 agent 在日志中记录的最新模式设置。缺少记录时显示未知模式。" = "Shows this agent’s latest speed setting from the log. Missing settings show Unknown mode.";
 "跟随系统" = "Follow system";
 "输入 %@ tok" = "Input %@ tok";
 "输入 / 输出" = "Input / Output";
@@ -204,7 +204,7 @@
 
 "部分日志不完整，费用速度可能偏低。" = "Some logs are incomplete; the spending rate may be understated.";
 
-"按最近 %@ 分钟的已记录花费外推，包含输入、输出、缓存及日志中的 Fast 设置。等待和工具时间也计入窗口。假设后续使用强度相同；API 等价估算，不代表实际账单。" = "Projects the last %@ minutes of recorded costs, including input, output, cache, and logged Fast settings. Waiting and tool time stay in the window. Assumes the same future activity; API-equivalent estimate, not an actual bill.";
+"根据最近 %@ 分钟的记录估算每小时 API 等价费用，计入输入、输出和缓存，按日志中的模式计价。观察窗口包含等待和工具时间。" = "Estimates hourly API-equivalent cost from the last %@ minutes of input, output, and cache usage at the logged speed setting. The window includes wait and tool time.";
 
 "价格快照：%@" = "Price snapshot: %@";
 

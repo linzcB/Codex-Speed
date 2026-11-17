@@ -51,7 +51,8 @@ final class ServiceTierTests: XCTestCase {
         XCTAssertEqual(ApiServiceTier(recordedValue: "priority"), .fast)
         XCTAssertEqual(ApiServiceTier(recordedValue: " Fast "), .fast)
         XCTAssertEqual(ApiServiceTier(recordedValue: "default"), .standard)
-        for value in [nil, "auto", "ultrafast", "scale", "future-tier"] {
+        XCTAssertEqual(ApiServiceTier(recordedValue: " Ultrafast "), .ultrafast)
+        for value in [nil, "auto", "scale", "future-tier"] {
             XCTAssertEqual(ApiServiceTier(recordedValue: value), .unknown)
             XCTAssertNil(ApiPriceCatalog.estimate(model: "gpt-6.1-sol", usage: ApiRequestUsage(counts),
                                                  serviceTier: ApiServiceTier(recordedValue: value)).totalUSD)

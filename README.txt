@@ -1,4 +1,4 @@
-Codex Speed 1.1.6
+Codex Speed 1.1.7
 ==============
 
 一个原生 macOS 菜单栏工具，用于监测本机 Codex 会话的平均输出速度。
@@ -93,9 +93,9 @@ Fast 参考：https://developers.openai.com/api/docs/guides/fast-mode
 1.0.8：API 等价费用估算
 ----------------------
 每日历史新增当日与各模型的 API 等价费用（美元），历史日期列表也显示费用。
-按 2026-10-27 核对的 OpenAI Standard 基价及 Fast 倍数回算历史，不代表 ChatGPT/Codex 订阅实际扣款。
+按 2026-11-18 核对的 OpenAI 价格和每次调用记录的模式回算历史，不代表 ChatGPT/Codex 订阅实际扣款。
 仅估算模型 token 费用；未加入工具单独收费、税费和地区调整。其他服务模式暂不估价。
-当前价格表包含 gpt-6-astra、gpt-6.1-sol、gpt-6.1-terra、gpt-6-sol、gpt-6-luna，面板可展开查看官方价格链接。
+当前价格表包含 gpt-6.2-astra、gpt-6.2-sol、gpt-6-astra、gpt-6.1-sol、gpt-6.1-terra、gpt-6-sol、gpt-6-luna，面板可展开查看官方价格链接。
 
 每次请求分别计算：
 未缓存输入 = 输入总量 - 缓存读取 - 缓存写入。

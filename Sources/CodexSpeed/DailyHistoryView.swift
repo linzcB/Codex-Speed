@@ -180,7 +180,7 @@ struct DailyHistoryView: View {
                     .font(.system(size: 10)).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text(L10n.text("按日志中的模式设置估价 · %@\nFast 按 Standard ×2，另计长上下文加价。无法确认服务端降级，不代表订阅实际账单。", ApiPriceCatalog.checkedDate))
+            Text(L10n.text("按日志中的模式设置和上下文长度估价 · %@\n金额为 API 等价估算。", ApiPriceCatalog.checkedDate))
                 .font(.system(size: 9)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             DisclosureGroup(L10n.text("价格表 · 美元 / 百万 token")) {
@@ -197,7 +197,7 @@ struct DailyHistoryView: View {
                     Text(L10n.text("单次输入超过 272,000 token：输入和缓存单价 ×2，输出单价 ×1.5。"))
                         .font(.system(size: 9)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(L10n.text("上表为 Standard；Fast 的输入、缓存和输出均 ×2。缺少模式或尚未支持的模式不估价。"))
+                    Text(L10n.text("上表为 Standard，缓存写入按 30 分钟保留价格估算。Fast 按 Standard ×2。GPT-6.2 的 Ultrafast 在太平洋时间 2027-03-01 前为 ×3，此后为 ×6。GPT-6 Astra 和 GPT-6.1 Sol 的 Ultrafast 为 ×6。"))
                         .font(.system(size: 9)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Link(L10n.text("查看 OpenAI 官方价格"), destination: ApiPriceCatalog.sourceURL)
@@ -214,7 +214,7 @@ struct DailyHistoryView: View {
     }
     private func unitPrice(_ amount: Double) -> String { String(format: "%g", amount) }
     private func tierSummary(_ totals: DailyTotals) -> String {
-        L10n.text("Standard %@ 次 · Fast %@ 次 · 未知/未支持 %@ 次", totals.standardRequests, totals.fastRequests, totals.unknownTierRequests)
+        L10n.text("Standard %@ 次 · Fast %@ 次 · Ultrafast %@ 次 · 未知/未支持 %@ 次", totals.standardRequests, totals.fastRequests, totals.ultrafastRequests, totals.unknownTierRequests)
     }
 
     private func tokenCard(_ title: String, value: Int) -> some View {

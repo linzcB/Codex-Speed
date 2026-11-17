@@ -164,7 +164,7 @@ struct Dashboard: View {
                 }
                 detailRow(L10n.text("主 agent 模型"), value: L10n.modelName(monitor.session?.model ?? "—"))
                 detailRow(L10n.text("主 agent 模式（设置）"), value: monitor.session?.own.serviceTier.displayName ?? "—")
-                    .help(L10n.text("读取该 agent 最新的 service_tier 设置，priority / fast 表示 Fast；并非服务端实际计费档位确认。缺少记录时显示未知模式。"))
+                    .help(L10n.text("显示该 agent 在日志中记录的最新模式设置。缺少记录时显示未知模式。"))
                 if !monitor.includeAutoReview && monitor.session?.own.isAutoReview == true {
                     Text(L10n.text("auto review · 已从合计排除")).foregroundStyle(.secondary)
                 } else {
